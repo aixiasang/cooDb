@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CoolDB API</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #3b82f6;
+            --primary-light: #93c5fd;
+            --primary-dark: #1d4ed8;
+            --secondary-color: #64748b;
+            --success-color: #22c55e;
+            --danger-color: #ef4444;
+            --warning-color: #f59e0b;
+            --gray-100: #f3f4f6;
+            --gray-200: #e5e7eb;
+            --gray-300: #d1d5db;
+            --gray-400: #9ca3af;
+            --gray-500: #6b7280;
+            --gray-600: #4b5563;
+            --gray-700: #374151;
+            --gray-800: #1f2937;
+            --gray-900: #111827;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            margin: 0;
+            padding: 0;
+            color: var(--gray-800);
+            background-color: #f8f9fa;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px;
+        }
+
+        header {
+            padding: 30px 0;
+            background-color: #fff;
+            border-bottom: 1px solid var(--gray-200);
+        }
+
+        .header-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .logo h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin: 0;
+            color: var(--gray-900);
+        }
+
+        .version {
+            display: inline-block;
+            padding: 4px 10px;
+            background-color: var(--primary-light);
+            color: var(--primary-dark);
+            border-radius: 20px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            margin-left: 10px;
+        }
+
+        .subheader {
+            color: var(--gray-600);
+            margin-top: 5px;
+            font-size: 1rem;
+        }
+
+        .main {
+            padding: 40px 0;
+        }
+
+        .card {
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+            margin-bottom: 24px;
+            overflow: hidden;
+        }
+
+        .card-header {
+            padding: 16px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background-color: var(--gray-100);
+            border-bottom: 1px solid var(--gray-200);
+            cursor: pointer;
+        }
+
+        .card-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin: 0;
+        }
+
+        .card-content {
+            padding: 24px;
+            display: none;
+        }
+
+        .card-content.show {
+            display: block;
+        }
+
+        .endpoint {
+            margin-bottom: 32px;
+        }
+
+        .endpoint-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 16px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--gray-200);
+        }
+
+        .method {
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            margin-right: 12px;
+            min-width: 60px;
+            text-align: center;
+        }
+
+        .method.get {
+            background-color: #dbeafe;
+            color: #2563eb;
+        }
+
+        .method.post {
+            background-color: #d1fae5;
+            color: #059669;
+        }
+
+        .method.put {
+            background-color: #fef3c7;
+            color: #d97706;
+        }
+
+        .method.delete {
+            background-color: #fee2e2;
+            color: #dc2626;
+        }
+
+        .path {
+            font-family: monospace;
+            font-size: 1rem;
+            font-weight: 500;
+        }
+
+        .endpoint-description {
+            color: var(--gray-600);
+            margin-bottom: 16px;
+        }
+
+        .section-title {
+            font-size: 1rem;
+            font-weight: 600;
+            margin: 16px 0 8px;
+            color: var(--gray-700);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 16px;
+        }
+
+        th, td {
+            padding: 10px 16px;
+            text-align: left;
+            border-bottom: 1px solid var(--gray-200);
+        }
+
+        th {
+            font-weight: 600;
+            background-color: var(--gray-100);
+        }
+
+        tr:hover {
+            background-color: var(--gray-50);
+        }
+
+        pre {
+            background-color: var(--gray-100);
+            padding: 16px;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-family: monospace;
+        }
+
+        code {
+            font-family: monospace;
+        }
+
+        .schema-table {
+            margin-top: 8px;
+        }
+
+        .arrow {
+            transition: transform 0.3s;
+        }
+
+        .arrow.down {
+            transform: rotate(180deg);
+        }
+
+        .schemas {
+            margin-top: 40px;
+        }
+
+        footer {
+            text-align: center;
+            padding: 20px 0;
+            color: var(--gray-500);
+            font-size: 0.9rem;
+            border-top: 1px solid var(--gray-200);
+            margin-top: 40px;
+        }
+
+        @media (max-width: 768px) {
+            .header-content {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .logo {
+                margin-bottom: 16px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="container">
+            <div class="header-content">
+                <div class="logo">
+                    <h1>CoolDB <span class="version">{{ api_version }}</span></h1>
+                </div>
+                <div class="subheader">/openapi.json</div>
+            </div>
+        </div>
+    </header>
+
+    <div class="main container">
+        <div class="card">
+            <div class="card-header" id="defaultHeader">
+                <h3 class="card-title">default</h3>
+                <span class="arrow">▼</span>
+            </div>
+            <div class="card-content" id="defaultContent">
+                <div class="endpoint">
+                    <div class="endpoint-header">
+                        <span class="method get">GET</span>
+                        <span class="path">/api/v1/keys</span>
+                    </div>
+                    <div class="endpoint-description">获取所有键</div>
+                    <div class="section-title">响应</div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>状态码</th>
+                                <th>描述</th>
+                                <th>数据类型</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>200</td>
+                                <td>成功获取所有键</td>
+                                <td>KeysResponse</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="endpoint">
+                    <div class="endpoint-header">
+                        <span class="method get">GET</span>
+                        <span class="path">/api/v1/keys/{key}</span>
+                    </div>
+                    <div class="endpoint-description">获取键值</div>
+                    <div class="section-title">参数</div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>名称</th>
+                                <th>位置</th>
+                                <th>类型</th>
+                                <th>必须</th>
+                                <th>描述</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>key</td>
+                                <td>path</td>
+                                <td>string</td>
+                                <td>是</td>
+                                <td>要获取的键</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <div class="section-title">响应</div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>状态码</th>
+                                <th>描述</th>
+                                <th>数据类型</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>200</td>
+                                <td>成功获取值</td>
+                                <td>KeyValueResponse</td>
+                            </tr>
+                            <tr>
+                                <td>404</td>
+                                <td>键不存在</td>
+                                <td>ErrorResponse</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="endpoint">
+                    <div class="endpoint-header">
+                        <span class="method put">PUT</span>
+                        <span class="path">/api/v1/keys/{key}</span>
+                    </div>
+                    <div class="endpoint-description">设置键值</div>
+                    <div class="section-title">参数</div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>名称</th>
+                                <th>位置</th>
+                                <th>类型</th>
+                                <th>必须</th>
+                                <th>描述</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>key</td>
+                                <td>path</td>
+                                <td>string</td>
+                                <td>是</td>
+                                <td>要设置的键</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <div class="section-title">请求体</div>
+                    <pre><code>{
+  "value": "string",
+  "encoding": "base64" // 可选
+}</code></pre>
+                    <div class="section-title">响应</div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>状态码</th>
+                                <th>描述</th>
+                                <th>数据类型</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>200</td>
+                                <td>成功设置值</td>
+                                <td>SuccessResponse</td>
+                            </tr>
+                            <tr>
+                                <td>400</td>
+                                <td>请求格式错误</td>
+                                <td>ErrorResponse</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="endpoint">
+                    <div class="endpoint-header">
+                        <span class="method delete">DELETE</span>
+                        <span class="path">/api/v1/keys/{key}</span>
+                    </div>
+                    <div class="endpoint-description">删除键值</div>
+                    <div class="section-title">参数</div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>名称</th>
+                                <th>位置</th>
+                                <th>类型</th>
+                                <th>必须</th>
+                                <th>描述</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>key</td>
+                                <td>path</td>
+                                <td>string</td>
+                                <td>是</td>
+                                <td>要删除的键</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <div class="section-title">响应</div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>状态码</th>
+                                <th>描述</th>
+                                <th>数据类型</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>200</td>
+                                <td>成功删除值</td>
+                                <td>SuccessResponse</td>
+                            </tr>
+                            <tr>
+                                <td>404</td>
+                                <td>键不存在</td>
+                                <td>ErrorResponse</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="endpoint">
+                    <div class="endpoint-header">
+                        <span class="method post">POST</span>
+                        <span class="path">/api/v1/batch</span>
+                    </div>
+                    <div class="endpoint-description">批量操作</div>
+                    <div class="section-title">请求体</div>
+                    <pre><code>[
+  {
+    "operation": "put",
+    "key": "string",
+    "value": "string",
+    "encoding": "base64" // 可选
+  },
+  {
+    "operation": "delete",
+    "key": "string"
+  }
+]</code></pre>
+                    <div class="section-title">响应</div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>状态码</th>
+                                <th>描述</th>
+                                <th>数据类型</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>200</td>
+                                <td>成功执行批量操作</td>
+                                <td>SuccessResponse</td>
+                            </tr>
+                            <tr>
+                                <td>400</td>
+                                <td>请求格式错误</td>
+                                <td>ErrorResponse</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="endpoint">
+                    <div class="endpoint-header">
+                        <span class="method get">GET</span>
+                        <span class="path">/api/v1/stats</span>
+                    </div>
+                    <div class="endpoint-description">获取数据库统计信息</div>
+                    <div class="section-title">响应</div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>状态码</th>
+                                <th>描述</th>
+                                <th>数据类型</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>200</td>
+                                <td>成功获取统计信息</td>
+                                <td>StatsResponse</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="endpoint">
+                    <div class="endpoint-header">
+                        <span class="method post">POST</span>
+                        <span class="path">/api/v1/merge</span>
+                    </div>
+                    <div class="endpoint-description">执行数据库合并操作</div>
+                    <div class="section-title">响应</div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>状态码</th>
+                                <th>描述</th>
+                                <th>数据类型</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>200</td>
+                                <td>成功执行合并操作</td>
+                                <td>SuccessResponse</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="card schemas">
+            <div class="card-header" id="schemasHeader">
+                <h3 class="card-title">Schemas</h3>
+                <span class="arrow">▼</span>
+            </div>
+            <div class="card-content" id="schemasContent">
+                <div class="section-title">KeysResponse</div>
+                <pre><code>{
+  "keys": [
+    "string"
+  ]
+}</code></pre>
+
+                <div class="section-title">KeyValueResponse</div>
+                <pre><code>{
+  "key": "string",
+  "value": "string",
+  "encoding": "base64" // 可选
+}</code></pre>
+
+                <div class="section-title">ValueRequest</div>
+                <pre><code>{
+  "value": "string",
+  "encoding": "base64" // 可选
+}</code></pre>
+
+                <div class="section-title">BatchOperation</div>
+                <pre><code>{
+  "operation": "put" | "delete",
+  "key": "string",
+  "value": "string", // 仅 put 操作需要
+  "encoding": "base64" // 可选
+}</code></pre>
+
+                <div class="section-title">SuccessResponse</div>
+                <pre><code>{
+  "success": true
+}</code></pre>
+
+                <div class="section-title">ErrorResponse</div>
+                <pre><code>{
+  "error": "string"
+}</code></pre>
+
+                <div class="section-title">StatsResponse</div>
+                <pre><code>{
+  "key_num": 0,
+  "data_file_num": 0,
+  "reclaimable_size": 0,
+  "disk_size": 0
+}</code></pre>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <div class="container">
+            <p>CoolDB API © 2025</p>
+        </div>
+    </footer>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const defaultHeader = document.getElementById('defaultHeader');
+            const defaultContent = document.getElementById('defaultContent');
+            const schemasHeader = document.getElementById('schemasHeader');
+            const schemasContent = document.getElementById('schemasContent');
+
+            // 默认展开第一个卡片
+            defaultContent.classList.add('show');
+            defaultHeader.querySelector('.arrow').classList.add('down');
+
+            // 添加点击事件处理
+            defaultHeader.addEventListener('click', function() {
+                defaultContent.classList.toggle('show');
+                defaultHeader.querySelector('.arrow').classList.toggle('down');
+            });
+
+            schemasHeader.addEventListener('click', function() {
+                schemasContent.classList.toggle('show');
+                schemasHeader.querySelector('.arrow').classList.toggle('down');
+            });
+        });
+    </script>
+</body>
+</html>

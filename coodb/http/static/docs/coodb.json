@@ -1,0 +1,465 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Coodb API",
+    "description": "Coodb 是一个高性能的键值存储数据库，基于 bitcask 模型实现。",
+    "version": "0.1.0",
+    "contact": {
+      "name": "Coodb Team"
+    },
+    "license": {
+      "name": "MIT"
+    }
+  },
+  "paths": {
+    "/": {
+      "get": {
+        "summary": "获取API根路径",
+        "operationId": "get_root",
+        "description": "返回API根路径信息，包含版本号和基本信息",
+        "responses": {
+          "200": {
+            "description": "成功获取API根路径信息",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "example": "Coodb API"
+                    },
+                    "version": {
+                      "type": "string",
+                      "example": "0.1.0"
+                    },
+                    "description": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/keys": {
+      "get": {
+        "summary": "获取所有键",
+        "operationId": "get_keys",
+        "description": "返回数据库中所有的键列表",
+        "tags": ["键值操作"],
+        "responses": {
+          "200": {
+            "description": "成功获取所有键",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeysResponse"
+                },
+                "example": {
+                  "keys": ["user:1", "user:2", "config:app"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/keys/{key}": {
+      "get": {
+        "summary": "获取键值",
+        "operationId": "get_value",
+        "description": "根据指定的键获取对应的值",
+        "tags": ["键值操作"],
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "要获取的键",
+            "example": "user:1"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功获取值",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeyValueResponse"
+                },
+                "example": {
+                  "key": "user:1",
+                  "value": "{\"name\":\"张三\",\"age\":30}"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "键不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "Key not found"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "设置键值",
+        "operationId": "put_value",
+        "description": "设置指定键的值，如果键不存在则创建",
+        "tags": ["键值操作"],
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "要设置的键",
+            "example": "user:1"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ValueRequest"
+              },
+              "example": {
+                "value": "{\"name\":\"张三\",\"age\":30}"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功设置值",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse"
+                },
+                "example": {
+                  "success": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求格式错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "Missing value in request body"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "删除键值",
+        "operationId": "delete_value",
+        "description": "删除指定的键值对",
+        "tags": ["键值操作"],
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "要删除的键",
+            "example": "user:1"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功删除值",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse"
+                },
+                "example": {
+                  "success": true
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "键不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "Key not found"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/batch": {
+      "post": {
+        "summary": "批量操作",
+        "operationId": "batch_operations",
+        "description": "执行多个键值操作，作为一个原子事务",
+        "tags": ["批量操作"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/BatchOperation"
+                }
+              },
+              "example": [
+                {
+                  "operation": "put",
+                  "key": "user:1",
+                  "value": "{\"name\":\"张三\",\"age\":30}"
+                },
+                {
+                  "operation": "delete",
+                  "key": "user:2"
+                }
+              ]
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功执行批量操作",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse"
+                },
+                "example": {
+                  "success": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求格式错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "Each operation must have 'operation' and 'key' fields"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/stats": {
+      "get": {
+        "summary": "获取数据库统计信息",
+        "operationId": "get_stats",
+        "description": "获取数据库的统计信息，包括键数量、文件数、可回收空间大小等",
+        "tags": ["管理操作"],
+        "responses": {
+          "200": {
+            "description": "成功获取统计信息",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatsResponse"
+                },
+                "example": {
+                  "key_num": 1024,
+                  "data_file_num": 3,
+                  "reclaimable_size": 2048576,
+                  "disk_size": 10485760
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/merge": {
+      "post": {
+        "summary": "执行数据库合并操作",
+        "operationId": "merge_database",
+        "description": "执行数据库文件合并，回收无效空间",
+        "tags": ["管理操作"],
+        "responses": {
+          "200": {
+            "description": "成功执行合并操作",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse"
+                },
+                "example": {
+                  "success": true
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "合并操作失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "Merge operation failed"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "KeysResponse": {
+        "type": "object",
+        "properties": {
+          "keys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "数据库中的键列表"
+          }
+        },
+        "required": ["keys"]
+      },
+      "KeyValueResponse": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "键名"
+          },
+          "value": {
+            "type": "string",
+            "description": "键值，可能是字符串或base64编码的二进制数据"
+          },
+          "encoding": {
+            "type": "string",
+            "enum": ["base64"],
+            "description": "如果值是二进制数据，则此字段表示编码方式"
+          }
+        },
+        "required": ["key", "value"]
+      },
+      "ValueRequest": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string",
+            "description": "要存储的值，可以是字符串或base64编码的二进制数据"
+          },
+          "encoding": {
+            "type": "string",
+            "enum": ["base64"],
+            "description": "如果值是base64编码的二进制数据，需设置此字段为'base64'"
+          }
+        },
+        "required": ["value"]
+      },
+      "BatchOperation": {
+        "type": "object",
+        "properties": {
+          "operation": {
+            "type": "string",
+            "enum": ["put", "delete"],
+            "description": "操作类型：put表示写入，delete表示删除"
+          },
+          "key": {
+            "type": "string",
+            "description": "操作的键名"
+          },
+          "value": {
+            "type": "string",
+            "description": "对于put操作，需提供要存储的值"
+          },
+          "encoding": {
+            "type": "string",
+            "enum": ["base64"],
+            "description": "如果值是base64编码的二进制数据，需设置此字段"
+          }
+        },
+        "required": ["operation", "key"]
+      },
+      "SuccessResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "description": "操作是否成功",
+            "default": true
+          }
+        },
+        "required": ["success"]
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "错误信息"
+          }
+        },
+        "required": ["error"]
+      },
+      "StatsResponse": {
+        "type": "object",
+        "properties": {
+          "key_num": {
+            "type": "integer",
+            "description": "数据库中的键数量"
+          },
+          "data_file_num": {
+            "type": "integer",
+            "description": "数据文件数量"
+          },
+          "reclaimable_size": {
+            "type": "integer",
+            "description": "可回收的空间大小(字节)"
+          },
+          "disk_size": {
+            "type": "integer",
+            "description": "数据库占用的磁盘空间(字节)"
+          }
+        },
+        "required": ["key_num", "data_file_num", "reclaimable_size", "disk_size"]
+      }
+    }
+  }
+}

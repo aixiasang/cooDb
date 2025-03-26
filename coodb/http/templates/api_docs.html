@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Coodb API 文档</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/swagger-ui.css') }}">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.3/font/bootstrap-icons.css">
+  <style>
+    .message {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      padding: 0.75rem 1.25rem;
+      border-radius: 0.25rem;
+      color: white;
+      z-index: 1000;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      transform: translateY(-20px);
+      opacity: 0;
+      transition: all 0.3s ease;
+    }
+    .message.show {
+      transform: translateY(0);
+      opacity: 1;
+    }
+    .message.success {
+      background-color: var(--success-color);
+    }
+    .message.error {
+      background-color: var(--danger-color);
+    }
+    .message.info {
+      background-color: var(--primary-color);
+    }
+    .response-loading {
+      padding: 1rem;
+      color: var(--gray-600);
+      font-style: italic;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="header-container">
+      <div class="logo-container">
+        <h1 class="logo-title">Coodb <span class="logo-version">{{ api_version }}</span></h1>
+      </div>
+      <a class="openapi-url" href="/coodb.json" target="_blank">/coodb.json</a>
+    </div>
+  </header>
+  
+  <div class="main-container">
+    <div class="api-info">
+      <h2>Coodb API 文档</h2>
+      <p>高性能的键值存储数据库，基于 bitcask 模型实现。</p>
+    </div>
+    
+    <div id="endpoints" class="swagger-ui">
+      <!-- 端点部分 -->
+      <div id="default-section" class="section">
+        <div class="section-header">
+          <h3 class="section-title">default</h3>
+          <i class="bi bi-chevron-down chevron-icon"></i>
+        </div>
+        <div class="section-content">
+          <!-- GET / -->
+          <div id="get-root" class="endpoint" data-method="GET" data-path="/">
+            <div class="endpoint-header">
+              <span class="http-method get">GET</span>
+              <span class="http-path">/</span>
+              <span class="endpoint-summary">获取API根路径</span>
+              <i id="get-root-chevron" class="bi bi-chevron-down chevron-icon"></i>
+            </div>
+            <div id="get-root-content" class="endpoint-content">
+              <p class="endpoint-description">返回API根路径信息，包含版本号和基本信息</p>
+              <div class="response-section">
+                <h4>响应</h4>
+                <table class="response-table">
+                  <thead>
+                    <tr>
+                      <th>状态码</th>
+                      <th>描述</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td class="response-code success">200</td>
+                      <td>成功获取API根路径信息</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="try-it-out-section">
+                <button id="get-root-try-btn" class="try-it-out-btn" data-endpoint="get-root">试一试</button>
+                <div id="get-root-try-container" class="try-it-out-container" style="display: none;">
+                  <button class="execute-btn" data-endpoint="get-root">执行</button>
+                  <button class="cancel-btn" data-endpoint="get-root">取消</button>
+                  <div id="get-root-response" class="response-container" style="display: none;"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <!-- GET /api/v1/keys -->
+          <div id="get-keys" class="endpoint" data-method="GET" data-path="/api/v1/keys">
+            <div class="endpoint-header">
+              <span class="http-method get">GET</span>
+              <span class="http-path">/api/v1/keys</span>
+              <span class="endpoint-summary">获取所有键</span>
+              <i id="get-keys-chevron" class="bi bi-chevron-down chevron-icon"></i>
+            </div>
+            <div id="get-keys-content" class="endpoint-content">
+              <div class="tag-container">
+                <span class="tag">键值操作</span>
+              </div>
+              <p class="endpoint-description">返回数据库中所有的键列表</p>
+              <div class="response-section">
+                <h4>响应</h4>
+                <table class="response-table">
+                  <thead>
+                    <tr>
+                      <th>状态码</th>
+                      <th>描述</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td class="response-code success">200</td>
+                      <td>成功获取所有键</td>
+                    </tr>
+                  </tbody>
+                </table>
+                <div class="schema-section">
+                  <h4 class="schema-title">响应模型</h4>
+                  <pre class="schema-model">{
+  "keys": [
+    "string"
+  ]
+}</pre>
+                </div>
+              </div>
+              <div class="try-it-out-section">
+                <button id="get-keys-try-btn" class="try-it-out-btn" data-endpoint="get-keys">试一试</button>
+                <div id="get-keys-try-container" class="try-it-out-container" style="display: none;">
+                  <button class="execute-btn" data-endpoint="get-keys">执行</button>
+                  <button class="cancel-btn" data-endpoint="get-keys">取消</button>
+                  <div id="get-keys-response" class="response-container" style="display: none;"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <!-- GET /api/v1/keys/{key} -->
+          <div id="get-value" class="endpoint" data-method="GET" data-path="/api/v1/keys/{key}">
+            <div class="endpoint-header">
+              <span class="http-method get">GET</span>
+              <span class="http-path">/api/v1/keys/{key}</span>
+              <span class="endpoint-summary">获取键值</span>
+              <i id="get-value-chevron" class="bi bi-chevron-down chevron-icon"></i>
+            </div>
+            <div id="get-value-content" class="endpoint-content">
+              <div class="tag-container">
+                <span class="tag">键值操作</span>
+              </div>
+              <p class="endpoint-description">根据指定的键获取对应的值</p>
+              <div class="parameter-section">
+                <h4>参数</h4>
+                <table class="parameter-table">
+                  <thead>
+                    <tr>
+                      <th>名称</th>
+                      <th>位置</th>
+                      <th>类型</th>
+                      <th>必须</th>
+                      <th>描述</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>key</td>
+                      <td>path</td>
+                      <td>string</td>
+                      <td><span class="required-badge">必须</span></td>
+                      <td>要获取的键</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="response-section">
+                <h4>响应</h4>
+                <table class="response-table">
+                  <thead>
+                    <tr>
+                      <th>状态码</th>
+                      <th>描述</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td class="response-code success">200</td>
+                      <td>成功获取值</td>
+                    </tr>
+                    <tr>
+                      <td class="response-code error">404</td>
+                      <td>键不存在</td>
+                    </tr>
+                  </tbody>
+                </table>
+                <div class="schema-section">
+                  <h4 class="schema-title">响应模型</h4>
+                  <pre class="schema-model">{
+  "key": "string",
+  "value": "string",
+  "encoding": "base64" // 可选
+}</pre>
+                </div>
+              </div>
+              <div class="try-it-out-section">
+                <button id="get-value-try-btn" class="try-it-out-btn" data-endpoint="get-value">试一试</button>
+                <div id="get-value-try-container" class="try-it-out-container" style="display: none;">
+                  <div class="param-input-container">
+                    <label class="param-input-label">key <span class="required-badge">必须</span></label>
+                    <input type="text" class="param-input" data-name="key" data-in="path" placeholder="请输入要获取的键">
+                  </div>
+                  <button class="execute-btn" data-endpoint="get-value">执行</button>
+                  <button class="cancel-btn" data-endpoint="get-value">取消</button>
+                  <div id="get-value-response" class="response-container" style="display: none;"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <!-- PUT /api/v1/keys/{key} -->
+          <div id="put-value" class="endpoint" data-method="PUT" data-path="/api/v1/keys/{key}">
+            <div class="endpoint-header">
+              <span class="http-method put">PUT</span>
+              <span class="http-path">/api/v1/keys/{key}</span>
+              <span class="endpoint-summary">设置键值</span>
+              <i id="put-value-chevron" class="bi bi-chevron-down chevron-icon"></i>
+            </div>
+            <div id="put-value-content" class="endpoint-content">
+              <div class="tag-container">
+                <span class="tag">键值操作</span>
+              </div>
+              <p class="endpoint-description">设置指定键的值，如果键不存在则创建</p>
+              <div class="parameter-section">
+                <h4>参数</h4>
+                <table class="parameter-table">
+                  <thead>
+                    <tr>
+                      <th>名称</th>
+                      <th>位置</th>
+                      <th>类型</th>
+                      <th>必须</th>
+                      <th>描述</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>key</td>
+                      <td>path</td>
+                      <td>string</td>
+                      <td><span class="required-badge">必须</span></td>
+                      <td>要设置的键</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="request-body-section">
+                <h4>请求体</h4>
+                <div class="schema-section">
+                  <pre class="schema-model">{
+  "value": "string",
+  "encoding": "base64" // 可选
+}</pre>
+                </div>
+              </div>
+              <div class="response-section">
+                <h4>响应</h4>
+                <table class="response-table">
+                  <thead>
+                    <tr>
+                      <th>状态码</th>
+                      <th>描述</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td class="response-code success">200</td>
+                      <td>成功设置值</td>
+                    </tr>
+                    <tr>
+                      <td class="response-code error">400</td>
+                      <td>请求格式错误</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="try-it-out-section">
+                <button id="put-value-try-btn" class="try-it-out-btn" data-endpoint="put-value">试一试</button>
+                <div id="put-value-try-container" class="try-it-out-container" style="display: none;">
+                  <div class="param-input-container">
+                    <label class="param-input-label">key <span class="required-badge">必须</span></label>
+                    <input type="text" class="param-input" data-name="key" data-in="path" placeholder="请输入要设置的键">
+                  </div>
+                  <div class="param-input-container">
+                    <label class="param-input-label">请求体 <span class="required-badge">必须</span></label>
+                    <textarea id="put-value-request-body" class="param-input" rows="5" placeholder='{"value": "示例值"}'>{
+  "value": "示例值"
+}</textarea>
+                  </div>
+                  <button class="execute-btn" data-endpoint="put-value">执行</button>
+                  <button class="cancel-btn" data-endpoint="put-value">取消</button>
+                  <div id="put-value-response" class="response-container" style="display: none;"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <!-- DELETE /api/v1/keys/{key} -->
+          <div id="delete-value" class="endpoint" data-method="DELETE" data-path="/api/v1/keys/{key}">
+            <div class="endpoint-header">
+              <span class="http-method delete">DELETE</span>
+              <span class="http-path">/api/v1/keys/{key}</span>
+              <span class="endpoint-summary">删除键值</span>
+              <i id="delete-value-chevron" class="bi bi-chevron-down chevron-icon"></i>
+            </div>
+            <div id="delete-value-content" class="endpoint-content">
+              <div class="tag-container">
+                <span class="tag">键值操作</span>
+              </div>
+              <p class="endpoint-description">删除指定的键值对</p>
+              <div class="parameter-section">
+                <h4>参数</h4>
+                <table class="parameter-table">
+                  <thead>
+                    <tr>
+                      <th>名称</th>
+                      <th>位置</th>
+                      <th>类型</th>
+                      <th>必须</th>
+                      <th>描述</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>key</td>
+                      <td>path</td>
+                      <td>string</td>
+                      <td><span class="required-badge">必须</span></td>
+                      <td>要删除的键</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="response-section">
+                <h4>响应</h4>
+                <table class="response-table">
+                  <thead>
+                    <tr>
+                      <th>状态码</th>
+                      <th>描述</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td class="response-code success">200</td>
+                      <td>成功删除值</td>
+                    </tr>
+                    <tr>
+                      <td class="response-code error">404</td>
+                      <td>键不存在</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="try-it-out-section">
+                <button id="delete-value-try-btn" class="try-it-out-btn" data-endpoint="delete-value">试一试</button>
+                <div id="delete-value-try-container" class="try-it-out-container" style="display: none;">
+                  <div class="param-input-container">
+                    <label class="param-input-label">key <span class="required-badge">必须</span></label>
+                    <input type="text" class="param-input" data-name="key" data-in="path" placeholder="请输入要删除的键">
+                  </div>
+                  <button class="execute-btn" data-endpoint="delete-value">执行</button>
+                  <button class="cancel-btn" data-endpoint="delete-value">取消</button>
+                  <div id="delete-value-response" class="response-container" style="display: none;"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <!-- POST /api/v1/batch -->
+          <div id="batch-operations" class="endpoint" data-method="POST" data-path="/api/v1/batch">
+            <div class="endpoint-header">
+              <span class="http-method post">POST</span>
+              <span class="http-path">/api/v1/batch</span>
+              <span class="endpoint-summary">批量操作</span>
+              <i id="batch-operations-chevron" class="bi bi-chevron-down chevron-icon"></i>
+            </div>
+            <div id="batch-operations-content" class="endpoint-content">
+              <div class="tag-container">
+                <span class="tag">批量操作</span>
+              </div>
+              <p class="endpoint-description">执行多个键值操作，作为一个原子事务</p>
+              <div class="request-body-section">
+                <h4>请求体</h4>
+                <div class="schema-section">
+                  <pre class="schema-model">[
+  {
+    "operation": "put",
+    "key": "string",
+    "value": "string",
+    "encoding": "base64" // 可选
+  },
+  {
+    "operation": "delete",
+    "key": "string"
+  }
+]</pre>
+                </div>
+              </div>
+              <div class="response-section">
+                <h4>响应</h4>
+                <table class="response-table">
+                  <thead>
+                    <tr>
+                      <th>状态码</th>
+                      <th>描述</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td class="response-code success">200</td>
+                      <td>成功执行批量操作</td>
+                    </tr>
+                    <tr>
+                      <td class="response-code error">400</td>
+                      <td>请求格式错误</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="try-it-out-section">
+                <button id="batch-operations-try-btn" class="try-it-out-btn" data-endpoint="batch-operations">试一试</button>
+                <div id="batch-operations-try-container" class="try-it-out-container" style="display: none;">
+                  <div class="param-input-container">
+                    <label class="param-input-label">请求体 <span class="required-badge">必须</span></label>
+                    <textarea id="batch-operations-request-body" class="param-input" rows="10" placeholder='[
+  {
+    "operation": "put",
+    "key": "user:1",
+    "value": "示例值1"
+  },
+  {
+    "operation": "delete",
+    "key": "user:2"
+  }
+]'>[
+  {
+    "operation": "put",
+    "key": "user:1",
+    "value": "示例值1"
+  },
+  {
+    "operation": "delete",
+    "key": "user:2"
+  }
+]</textarea>
+                  </div>
+                  <button class="execute-btn" data-endpoint="batch-operations">执行</button>
+                  <button class="cancel-btn" data-endpoint="batch-operations">取消</button>
+                  <div id="batch-operations-response" class="response-container" style="display: none;"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <!-- GET /api/v1/stats -->
+          <div id="get-stats" class="endpoint" data-method="GET" data-path="/api/v1/stats">
+            <div class="endpoint-header">
+              <span class="http-method get">GET</span>
+              <span class="http-path">/api/v1/stats</span>
+              <span class="endpoint-summary">获取数据库统计信息</span>
+              <i id="get-stats-chevron" class="bi bi-chevron-down chevron-icon"></i>
+            </div>
+            <div id="get-stats-content" class="endpoint-content">
+              <div class="tag-container">
+                <span class="tag">管理操作</span>
+              </div>
+              <p class="endpoint-description">获取数据库的统计信息，包括键数量、文件数、可回收空间大小等</p>
+              <div class="response-section">
+                <h4>响应</h4>
+                <table class="response-table">
+                  <thead>
+                    <tr>
+                      <th>状态码</th>
+                      <th>描述</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td class="response-code success">200</td>
+                      <td>成功获取统计信息</td>
+                    </tr>
+                  </tbody>
+                </table>
+                <div class="schema-section">
+                  <h4 class="schema-title">响应模型</h4>
+                  <pre class="schema-model">{
+  "key_num": 0,
+  "data_file_num": 0,
+  "reclaimable_size": 0,
+  "disk_size": 0
+}</pre>
+                </div>
+              </div>
+              <div class="try-it-out-section">
+                <button id="get-stats-try-btn" class="try-it-out-btn" data-endpoint="get-stats">试一试</button>
+                <div id="get-stats-try-container" class="try-it-out-container" style="display: none;">
+                  <button class="execute-btn" data-endpoint="get-stats">执行</button>
+                  <button class="cancel-btn" data-endpoint="get-stats">取消</button>
+                  <div id="get-stats-response" class="response-container" style="display: none;"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <!-- POST /api/v1/merge -->
+          <div id="merge-database" class="endpoint" data-method="POST" data-path="/api/v1/merge">
+            <div class="endpoint-header">
+              <span class="http-method post">POST</span>
+              <span class="http-path">/api/v1/merge</span>
+              <span class="endpoint-summary">执行数据库合并操作</span>
+              <i id="merge-database-chevron" class="bi bi-chevron-down chevron-icon"></i>
+            </div>
+            <div id="merge-database-content" class="endpoint-content">
+              <div class="tag-container">
+                <span class="tag">管理操作</span>
+              </div>
+              <p class="endpoint-description">执行数据库文件合并，回收无效空间</p>
+              <div class="response-section">
+                <h4>响应</h4>
+                <table class="response-table">
+                  <thead>
+                    <tr>
+                      <th>状态码</th>
+                      <th>描述</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td class="response-code success">200</td>
+                      <td>成功执行合并操作</td>
+                    </tr>
+                    <tr>
+                      <td class="response-code error">500</td>
+                      <td>合并操作失败</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="try-it-out-section">
+                <button id="merge-database-try-btn" class="try-it-out-btn" data-endpoint="merge-database">试一试</button>
+                <div id="merge-database-try-container" class="try-it-out-container" style="display: none;">
+                  <button class="execute-btn" data-endpoint="merge-database">执行</button>
+                  <button class="cancel-btn" data-endpoint="merge-database">取消</button>
+                  <div id="merge-database-response" class="response-container" style="display: none;"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- 模型部分 -->
+      <div id="schemas-section" class="section">
+        <div class="section-header">
+          <h3 class="section-title">Schemas</h3>
+          <i class="bi bi-chevron-down chevron-icon"></i>
+        </div>
+        <div class="section-content">
+          <h4 class="schema-title">KeysResponse</h4>
+          <pre class="schema-model">{
+  "keys": [
+    "string"
+  ]
+}</pre>
+          
+          <h4 class="schema-title">KeyValueResponse</h4>
+          <pre class="schema-model">{
+  "key": "string",
+  "value": "string",
+  "encoding": "base64" // 可选
+}</pre>
+          
+          <h4 class="schema-title">ValueRequest</h4>
+          <pre class="schema-model">{
+  "value": "string",
+  "encoding": "base64" // 可选
+}</pre>
+          
+          <h4 class="schema-title">BatchOperation</h4>
+          <pre class="schema-model">{
+  "operation": "put" | "delete",
+  "key": "string",
+  "value": "string", // 仅 put 操作需要
+  "encoding": "base64" // 可选
+}</pre>
+          
+          <h4 class="schema-title">SuccessResponse</h4>
+          <pre class="schema-model">{
+  "success": true
+}</pre>
+          
+          <h4 class="schema-title">ErrorResponse</h4>
+          <pre class="schema-model">{
+  "error": "string"
+}</pre>
+          
+          <h4 class="schema-title">StatsResponse</h4>
+          <pre class="schema-model">{
+  "key_num": 0,
+  "data_file_num": 0,
+  "reclaimable_size": 0,
+  "disk_size": 0
+}</pre>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <footer>
+    <div class="footer-container">
+      <p>Coodb API © 2025</p>
+    </div>
+  </footer>
+  
+  <script src="{{ url_for('static', filename='js/swagger-ui.js') }}"></script>
+</body>
+</html>

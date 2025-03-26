@@ -1,0 +1,4 @@
+include LICENSE
+include README.md
+recursive-include coodb/http/static *
+recursive-include coodb/http/templates *
