@@ -45,7 +45,7 @@ def index():
 @app.route('/coodb.json')
 def openapi_spec():
     """返回OpenAPI规范"""
-    with open(os.path.join(os.path.dirname(__file__), 'static', 'docs', 'coodb.json'), 'r') as f:
+    with open(os.path.join(os.path.dirname(__file__), 'static', 'docs', 'coodb.json'), 'r', encoding='utf-8') as f:
         spec = json.load(f)
     return jsonify(spec)
 
