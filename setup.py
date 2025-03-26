@@ -7,9 +7,12 @@ setup(
     install_requires=[
         "sortedcontainers>=2.4.0",
         "pygtrie>=2.5.0",
-        "BTrees>=4.11.3"
+        "BTrees>=4.11.3",
+        "flask>=2.0.0",
+        "requests>=2.25.0",
+        "typing-extensions>=4.0.0"
     ],
-    python_requires=">=3.7",
+    python_requires=">=3.9",
     author="xisun",
     description="A Python implementation of Bitcask",
     classifiers=[
@@ -17,8 +20,6 @@ setup(
         "Intended Audience :: Developers",
         "License :: OSI Approved :: MIT License",
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.7",
-        "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",

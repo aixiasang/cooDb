@@ -31,7 +31,7 @@ class LogRecord:
         self.value = value if value is not None else b""
         self.type = record_type
         
-    def encode(self) -> tuple[bytes, int]:
+    def encode(self) -> Tuple[bytes, int]:
         """编码日志记录
         
         Returns:
