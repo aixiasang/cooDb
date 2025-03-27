@@ -182,6 +182,7 @@ def test_set_operations(client):
         print("创建集合: colors:warm -> {red, orange, yellow}")
         print("创建集合: colors:cool -> {blue, green, purple}")
         
+        
         # 获取集合所有成员
         try:
             members = client.smembers("colors:warm")
