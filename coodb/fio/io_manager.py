@@ -1,207 +1,214 @@
 import os
 import mmap
-from enum import Enum, auto
-from typing import Optional, BinaryIO
-
-# 数据文件权限
-DATA_FILE_PERM = 0o644
+from enum import Enum
+from typing import BinaryIO, Optional
 
 class FileIOType(Enum):
     """文件IO类型"""
-    STANDARD = auto()  # 标准文件IO
-    MEMORY_MAP = auto()  # 内存映射IO
+    StandardFIO = 0   # 标准文件IO
+    MemoryMap = 1     # 内存映射IO
+
+DATA_FILE_PERM = 0o644  # 文件权限
 
 class IOManager:
     """IO管理器接口"""
     
-    def read(self, buf: bytearray, offset: int) -> int:
-        """从指定位置读取数据到缓冲区
-        
-        Args:
-            buf: 目标缓冲区
-            offset: 起始位置
-            
-        Returns:
-            读取的字节数
-        """
-        raise NotImplementedError
-        
-    def write(self, buf: bytes) -> int:
-        """写入数据
-        
-        Args:
-            buf: 要写入的数据
-            
-        Returns:
-            写入的字节数
-        """
-        raise NotImplementedError
-        
-    def sync(self) -> None:
-        """同步数据到磁盘"""
-        raise NotImplementedError
-        
-    def close(self) -> None:
-        """关闭IO"""
-        raise NotImplementedError
-        
     @staticmethod
-    def new_io_manager(filename: str, io_type: FileIOType) -> 'IOManager':
+    def new_io_manager(file_path: str, io_type: FileIOType):
         """创建新的IO管理器
         
         Args:
-            filename: 文件名
+            file_path: 文件路径
             io_type: IO类型
             
         Returns:
             IO管理器实例
         """
-        if io_type == FileIOType.STANDARD:
-            return FileIOManager(filename)
-        elif io_type == FileIOType.MEMORY_MAP:
-            return MMapIOManager(filename)
+        if io_type == FileIOType.StandardFIO:
+            return FileIOManager(file_path)
+        elif io_type == FileIOType.MemoryMap:
+            return MMapIOManager(file_path)
         else:
             raise ValueError(f"不支持的IO类型: {io_type}")
 
-class FileIOManager(IOManager):
+class FileIOManager:
     """标准文件IO管理器"""
     
-    def __init__(self, filename: str):
-        """初始化文件IO管理器
+    def __init__(self, file_path: str):
+        """初始化标准文件IO管理器
         
         Args:
-            filename: 文件名
+            file_path: 文件路径
         """
-        self.filename = filename
-        self.file: Optional[BinaryIO] = None
-        self._open_file()
-        
-    def _open_file(self) -> None:
-        """打开文件"""
+        self.file_path = file_path
         # 确保目录存在
-        os.makedirs(os.path.dirname(self.filename), exist_ok=True)
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        # 打开文件，如果不存在则创建
+        self.fd = open(file_path, "ab+")
         
-        # 打开文件
-        if not os.path.exists(self.filename):
-            self.file = open(self.filename, "wb+")
-        else:
-            self.file = open(self.filename, "rb+")
-            
-    def read(self, buf: bytearray, offset: int) -> int:
-        """从指定位置读取数据到缓冲区"""
-        if not self.file:
-            raise IOError("文件未打开")
-            
-        self.file.seek(offset)
-        return self.file.readinto(buf)
+    def read(self, b: bytearray, offset: int) -> int:
+        """从指定位置读取数据
         
-    def write(self, buf: bytes) -> int:
-        """写入数据"""
-        if not self.file:
-            raise IOError("文件未打开")
+        Args:
+            b: 用于存储读取数据的字节数组
+            offset: 文件中的偏移位置
             
-        return self.file.write(buf)
+        Returns:
+            实际读取的字节数
+        """
+        self.fd.seek(offset)
+        return self.fd.readinto(b)
+        
+    def write(self, b: bytes) -> int:
+        """写入数据
+        
+        Args:
+            b: 要写入的数据
+            
+        Returns:
+            实际写入的字节数
+        """
+        return self.fd.write(b)
         
     def sync(self) -> None:
-        """同步数据到磁盘"""
-        if not self.file:
-            raise IOError("文件未打开")
-            
-        self.file.flush()
-        os.fsync(self.file.fileno())
+        """将数据同步到磁盘"""
+        self.fd.flush()
+        os.fsync(self.fd.fileno())
         
     def close(self) -> None:
         """关闭文件"""
-        if self.file:
-            self.file.close()
-            self.file = None
+        if self.fd:
+            self.fd.close()
+            
+    def size(self) -> int:
+        """获取文件大小
+        
+        Returns:
+            文件大小（字节）
+        """
+        current_pos = self.fd.tell()
+        self.fd.seek(0, os.SEEK_END)
+        size = self.fd.tell()
+        self.fd.seek(current_pos)
+        return size
 
-class MMapIOManager(IOManager):
+class MMapIOManager:
     """内存映射IO管理器"""
     
-    def __init__(self, filename: str):
+    def __init__(self, file_path: str):
         """初始化内存映射IO管理器
         
         Args:
-            filename: 文件名
+            file_path: 文件路径
         """
-        self.filename = filename
-        self.file: Optional[BinaryIO] = None
-        self.mm: Optional[mmap.mmap] = None
-        self._open_file()
-        
-    def _open_file(self) -> None:
-        """打开文件并创建内存映射"""
+        self.file_path = file_path
         # 确保目录存在
-        os.makedirs(os.path.dirname(self.filename), exist_ok=True)
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        # 打开文件，如果不存在则创建
+        self.fd = open(file_path, "ab+")
+        self.mmap = None
+        self.size_value = 0
+        # 初始化内存映射
+        self._init_mmap()
         
-        # 打开文件
-        if not os.path.exists(self.filename):
-            self.file = open(self.filename, "wb+")
+    def _init_mmap(self) -> None:
+        """初始化内存映射"""
+        size = self.fd.seek(0, os.SEEK_END)
+        self.size_value = size
+        
+        if size > 0:
+            # 如果文件不为空，则创建内存映射
+            self.mmap = mmap.mmap(self.fd.fileno(), size, access=mmap.ACCESS_WRITE)
         else:
-            self.file = open(self.filename, "rb+")
+            # 文件为空的情况，不创建内存映射
+            self.mmap = None
             
-        # 获取文件大小
-        self.file.seek(0, os.SEEK_END)
-        size = self.file.tell()
+    def _grow(self, new_size: int) -> None:
+        """增大内存映射区域
         
-        # 如果文件为空，写入一个字节以便创建映射
-        if size == 0:
-            self.file.write(b'\0')
-            size = 1
+        Args:
+            new_size: 新的大小
+        """
+        # 关闭旧的映射
+        if self.mmap:
+            self.mmap.close()
             
-        # 创建内存映射
-        self.mm = mmap.mmap(
-            self.file.fileno(),
-            size,
-            access=mmap.ACCESS_WRITE
-        )
+        # 调整文件大小
+        self.fd.seek(new_size - 1)
+        self.fd.write(b'\0')
+        self.fd.flush()
         
-    def read(self, buf: bytearray, offset: int) -> int:
-        """从指定位置读取数据到缓冲区"""
-        if not self.mm:
-            raise IOError("内存映射未创建")
-            
-        self.mm.seek(offset)
-        data = self.mm.read(len(buf))
-        buf[:len(data)] = data
-        return len(data)
+        # 创建新的映射
+        self.size_value = new_size
+        self.mmap = mmap.mmap(self.fd.fileno(), new_size, access=mmap.ACCESS_WRITE)
         
-    def write(self, buf: bytes) -> int:
-        """写入数据"""
-        if not self.mm:
-            raise IOError("内存映射未创建")
+    def read(self, b: bytearray, offset: int) -> int:
+        """从指定位置读取数据
+        
+        Args:
+            b: 用于存储读取数据的字节数组
+            offset: 文件中的偏移位置
             
-        # 如果需要更多空间，重新映射文件
-        required_size = self.mm.tell() + len(buf)
-        if required_size > self.mm.size():
-            self.mm.close()
+        Returns:
+            实际读取的字节数
+        """
+        if offset >= self.size_value:
+            return 0
             
-            # 调整文件大小
-            self.file.truncate(required_size)
+        # 如果文件为空或内存映射还没创建
+        if not self.mmap:
+            return 0
             
-            # 重新创建映射
-            self.mm = mmap.mmap(
-                self.file.fileno(),
-                required_size,
-                access=mmap.ACCESS_WRITE
-            )
+        # 计算可读取的最大长度
+        read_size = min(len(b), self.size_value - offset)
+        self.mmap.seek(offset)
+        data = self.mmap.read(read_size)
+        b[:read_size] = data
+        return read_size
+        
+    def write(self, b: bytes) -> int:
+        """写入数据
+        
+        Args:
+            b: 要写入的数据
             
-        return self.mm.write(buf)
+        Returns:
+            实际写入的字节数
+        """
+        # 获取当前文件大小
+        current_size = self.size_value
+        # 计算写入后的新大小
+        new_size = current_size + len(b)
+        
+        # 如果需要增大映射区域
+        if current_size < new_size:
+            self._grow(new_size)
+            
+        # 写入数据
+        self.mmap.seek(current_size)
+        self.mmap.write(b)
+        return len(b)
         
     def sync(self) -> None:
-        """同步数据到磁盘"""
-        if not self.mm:
-            raise IOError("内存映射未创建")
-            
-        self.mm.flush()
+        """将数据同步到磁盘"""
+        if self.mmap:
+            self.mmap.flush()
+        self.fd.flush()
+        os.fsync(self.fd.fileno())
         
     def close(self) -> None:
-        """关闭内存映射和文件"""
-        if self.mm:
-            self.mm.close()
-            self.mm = None
+        """关闭文件"""
+        if self.mmap:
+            self.mmap.close()
+            self.mmap = None
+        if self.fd:
+            self.fd.close()
+            self.fd = None
             
-        if self.file:
-            self.file.close()
-            self.file = None 
+    def size(self) -> int:
+        """获取文件大小
+        
+        Returns:
+            文件大小（字节）
+        """
+        return self.size_value 

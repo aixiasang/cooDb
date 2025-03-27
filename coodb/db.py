@@ -1,7 +1,6 @@
 import os
 import time
 import threading
-import msvcrt
 import struct
 from typing import Optional, Dict, List, Callable, Any, Set, Iterator, Tuple, BinaryIO
 from .options import Options
@@ -12,6 +11,8 @@ from .index.index import Indexer, IndexType, new_indexer
 from .index import BTree, ART, BPTree, SkipList
 from .batch import Batch
 from .iterator import Iterator
+from .fio.io_manager import FileIOType
+from .fio.file_lock import FileLock
 
 # 常量定义
 SEQ_NO_KEY = "seq_no"
@@ -19,6 +20,7 @@ MERGE_FINISHED_KEY = "merge_finished"
 MERGE_FILENAME = "merge.data"
 FILE_LOCK_NAME = "flock"
 NON_TRANSACTION_SEQ_NO = 0
+DATA_FILE_NAME_SUFFIX = ".data"
 
 class DB:
     """数据库核心实现"""
@@ -45,8 +47,8 @@ class DB:
         self.reclaim_size = 0  # 可回收的空间大小
         
         # 文件锁相关
-        self.file_lock: Optional[BinaryIO] = None
         self.file_lock_path = os.path.join(options.dir_path, FILE_LOCK_NAME)
+        self.file_lock = FileLock(self.file_lock_path)
         
         # 创建数据目录
         if not os.path.exists(options.dir_path):
@@ -55,7 +57,8 @@ class DB:
             
         try:
             # 获取文件锁
-            self._acquire_file_lock()
+            if not self.file_lock.acquire():
+                raise ErrDatabaseIsUsing()
             
             # 加载数据文件
             self.load_data_files()
@@ -77,41 +80,16 @@ class DB:
             if options.index_type == IndexType.BTREE:
                 self.seq_no = self._load_seq_no()
                 if self.active_file:
-                    self.active_file.write_off = self.active_file.size()
+                    self.active_file.write_offset = self.active_file.size()
         except:
             # 出错时释放文件锁
-            self._release_file_lock()
+            self.file_lock.release()
             raise
-        
-    def _acquire_file_lock(self):
-        """获取文件锁"""
-        try:
-            self.file_lock = open(self.file_lock_path, 'wb')
-            msvcrt.locking(self.file_lock.fileno(), msvcrt.LK_NBLCK, 1)
-        except IOError:
-            if self.file_lock:
-                self.file_lock.close()
-            raise ErrDatabaseIsUsing()
-            
-    def _release_file_lock(self):
-        """释放文件锁"""
-        if self.file_lock:
-            try:
-                msvcrt.locking(self.file_lock.fileno(), msvcrt.LK_UNLCK, 1)
-            except:
-                pass
-            finally:
-                self.file_lock.close()
-                self.file_lock = None
-                try:
-                    os.remove(self.file_lock_path)
-                except:
-                    pass
         
     def load_data_files(self):
         """加载数据文件"""
         files = [f for f in os.listdir(self.options.dir_path) 
-                if f.endswith('.data') and not f.startswith(('seq_no', 'hint-index', 'merge-finished'))]
+                if f.endswith(DATA_FILE_NAME_SUFFIX) and not f.startswith(('seq_no', 'hint-index', 'merge-finished'))]
         file_ids = []
         
         # 获取所有文件ID
@@ -213,18 +191,21 @@ class DB:
         if self.is_closed:
             raise ErrDatabaseClosed()
             
+        if not key:
+            raise ErrKeyIsEmpty()
+            
         # 从索引获取记录位置
         with self.mu:
             pos = self.index.get(key)
             if not pos:
                 return None
             
-        # 获取值
-        value = self._get_value_by_position(pos)
-        if not value:
-            return None
-            
-        return value
+            # 获取值
+            try:
+                value = self._get_value_by_position(pos)
+                return value
+            except Exception:
+                return None
         
     def delete(self, key: bytes) -> None:
         """删除键值对"""
@@ -286,7 +267,7 @@ class DB:
                     self.index.close()
                     
                 # 释放文件锁
-                self._release_file_lock()
+                self.file_lock.release()
             finally:
                 self.is_closed = True
         
@@ -328,42 +309,126 @@ class DB:
     def _reset_io_type(self):
         """重置IO类型为标准文件IO"""
         if self.active_file:
-            self.active_file.reset_io_type()
-        for file in self.older_files.values():
-            file.reset_io_type()
+            self.active_file.reset_io_type(FileIOType.StandardFIO)
+        for file_id, file in self.older_files.items():
+            file.reset_io_type(FileIOType.StandardFIO)
             
     def _load_merge_files(self):
-        """加载merge文件"""
-        # TODO: 实现merge文件加载逻辑
-        pass
+        """加载merge文件，检查是否存在未完成的merge操作"""
+        merge_finished_path = os.path.join(self.options.dir_path, f"{MERGE_FINISHED_KEY}{DATA_FILE_NAME_SUFFIX}")
         
+        # 如果不存在merge完成标记文件，说明没有进行过merge或上次merge未完成
+        if not os.path.exists(merge_finished_path):
+            return
+        
+        # 读取merge完成标记文件内容
+        with open(merge_finished_path, 'rb') as f:
+            data = f.read()
+            if not data:
+                return
+            
+            # 解码记录
+            record = LogRecord.decode(data)
+            if not record:
+                return
+            
+            # 清理旧的数据文件，除了文件ID为1的文件
+            for file_id in self.file_ids:
+                if file_id > 1:  # 保留merge后生成的第一个文件
+                    file_path = os.path.join(self.options.dir_path, f"{file_id:09d}{DATA_FILE_NAME_SUFFIX}")
+                    try:
+                        os.remove(file_path)
+                    except Exception as e:
+                        print(f"清理旧数据文件失败: {str(e)}")
+                        
+            # 删除merge完成标记文件
+            try:
+                os.remove(merge_finished_path)
+            except Exception as e:
+                print(f"删除merge完成标记文件失败: {str(e)}")
+            
+            # 重置文件ID列表
+            self.file_ids = [1]
+
     def _load_index_from_hint_file(self):
-        """从hint文件加载索引"""
-        # TODO: 实现从hint文件加载索引的逻辑
-        pass
+        """从hint文件加载索引，提高启动速度"""
+        hint_file_path = os.path.join(self.options.dir_path, "hint-index")
+        
+        # 如果hint文件不存在，直接返回
+        if not os.path.exists(hint_file_path):
+            return
+        
+        # 打开hint文件
+        hint_file = None
+        try:
+            # 使用DataFile打开hint文件
+            hint_file = DataFile(self.options.dir_path, 0)
+            hint_file.file_path = hint_file_path
+            
+            # 读取文件中的所有记录
+            offset = 0
+            while True:
+                result = hint_file.read_log_record(offset)
+                if result is None:
+                    break
+                
+                record, size = result
+                if not record:
+                    break
+                
+                # 从record中解码位置信息
+                key = record.key
+                pos_data = record.value
+                if len(pos_data) == 0:
+                    offset += size
+                    continue
+                
+                # 解码位置信息
+                try:
+                    file_id, record_offset, record_size = struct.unpack("=IQI", pos_data)
+                    pos = LogRecordPos(file_id, record_offset, record_size)
+                    
+                    # 更新索引
+                    self.index.put(key, pos)
+                except Exception as e:
+                    print(f"解码位置信息出错: {str(e)}")
+                
+                # 移动到下一条记录
+                offset += size
+        except Exception as e:
+            print(f"从hint文件加载索引时出错: {str(e)}")
+        finally:
+            if hint_file:
+                hint_file.close()
         
     def stat(self) -> dict:
-        """返回数据库的统计信息"""
+        """返回数据库的统计信息
+        
+        Returns:
+            包含数据库统计信息的字典
+        """
         if self.is_closed:
             raise ErrDatabaseClosed()
             
-        data_files = len(self.older_files)
-        if self.active_file:
-            data_files += 1
+        with self.mu:
+            # 计算数据文件数量
+            data_files_num = len(self.older_files)
+            if self.active_file:
+                data_files_num += 1
             
-        # 计算数据目录大小
-        dir_size = 0
-        for root, _, files in os.walk(self.options.dir_path):
-            for file in files:
-                file_path = os.path.join(root, file)
-                dir_size += os.path.getsize(file_path)
-                
-        return {
-            'key_num': self.index.size(),
-            'data_file_num': data_files,
-            'reclaimable_size': self.reclaim_size,
-            'disk_size': dir_size
-        }
+            # 计算数据目录大小
+            disk_size = 0
+            for root, _, files in os.walk(self.options.dir_path):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    disk_size += os.path.getsize(file_path)
+            
+            return {
+                'key_num': self.index.size(),         # 键值对数量
+                'data_files_num': data_files_num,     # 数据文件数量
+                'disk_size': disk_size,               # 磁盘占用大小(字节)
+                'reclaimable_size': self.reclaim_size # 可回收空间大小(字节)
+            }
         
     def backup(self, dir_path: str) -> None:
         """备份数据库到指定目录"""
@@ -390,7 +455,7 @@ class DB:
                     dst.write(src.read())
                     
     def fold(self, fn: Callable[[bytes, bytes], bool]) -> None:
-        """遍历所有键值对
+        """遍历所有键值对并应用函数，类似于bitcask-go的Fold方法
         
         Args:
             fn: 处理函数，接收key和value作为参数，返回是否继续遍历
@@ -398,12 +463,16 @@ class DB:
         if self.is_closed:
             raise ErrDatabaseClosed()
             
-        for key in self.index.list_keys():
-            value = self.get(key)
-            if value is None:
-                continue
-            if not fn(key, value):
-                break 
+        with self.mu:
+            it = self.iterator(False)
+            it.rewind()
+            while it.valid():
+                key = it.key()
+                value = it.value()
+                if value is not None:
+                    if not fn(key, value):
+                        break
+                it.next()
         
     def _append_log_record(self, record: LogRecord) -> LogRecordPos:
         """追加日志记录（无需加锁，因为外层已有锁保护）"""
@@ -446,10 +515,15 @@ class DB:
         if not data_file:
             raise ErrDataFileNotFound()
             
-        record, _ = data_file.read_log_record(pos.offset)
-        if not record or not record.value:
+        # 从数据文件读取记录
+        result = data_file.read_log_record(pos.offset)
+        if result is None:
             return None
-            
+        
+        record, _ = result
+        if not record or record.type == LogRecordType.DELETED:
+            return None
+        
         return record.value
         
     def _read_log_record(self, pos: LogRecordPos) -> Optional[LogRecord]:
@@ -470,7 +544,12 @@ class DB:
         if not data_file:
             raise ErrDataFileNotFound()
             
-        record, _ = data_file.read_log_record(pos.offset)
+        # 从数据文件读取记录
+        result = data_file.read_log_record(pos.offset)
+        if result is None:
+            return None
+        
+        record, _ = result
         return record
         
     def iterator(self, reverse: bool = False) -> Iterator:
@@ -487,71 +566,138 @@ class DB:
             
         return Iterator(self, self.index.iterator(reverse))
         
-    def merge(self) -> None:
-        """执行数据合并操作"""
+    def list_keys(self) -> List[bytes]:
+        """获取数据库中所有的键列表
+        
+        Returns:
+            所有键的列表
+        """
         if self.is_closed:
             raise ErrDatabaseClosed()
             
+        keys = []
+        it = self.iterator(False)
+        it.rewind()
+        while it.valid():
+            keys.append(it.key())
+            it.next()
+        return keys
+        
+    def merge(self) -> None:
+        """执行数据合并操作，将多个数据文件合并为一个，并删除无效数据"""
+        if self.is_closed:
+            raise ErrDatabaseClosed()
+            
+        # 已经在合并中则返回
+        if self.is_merging:
+            return
+            
         with self.mu:
-            # 创建合并文件
-            merge_path = os.path.join(self.options.dir_path, MERGE_FILENAME)
-            offset = 0  # 记录写入位置
-            with open(merge_path, "wb") as merge_file:
-                # 遍历所有有效数据
-                iterator = self.iterator()
-                iterator.rewind()
-                while iterator.valid():
-                    key = iterator.key()
-                    value = iterator.value()
+            self.is_merging = True
+            
+            try:
+                # 创建临时的合并文件
+                merge_file_path = os.path.join(self.options.dir_path, MERGE_FILENAME)
+                merge_file = open(merge_file_path, "wb")
+                
+                # 写入位置
+                offset = 0
+                
+                # 创建新的索引映射，记录新旧位置关系
+                new_pos_map = {}
+                
+                # 遍历所有有效数据，写入合并文件
+                it = self.iterator()
+                it.rewind()
+                
+                while it.valid():
+                    key = it.key()
+                    value = it.value()
                     
-                    # 写入新记录
+                    # 创建新记录
                     record = LogRecord(
                         key=key,
                         value=value,
                         record_type=LogRecordType.NORMAL
                     )
-                    encoded, size = record.encode()
-                    merge_file.write(encoded)
                     
-                    # 更新索引
-                    pos = LogRecordPos(1, offset, size)
-                    self.index.put(key, pos)
+                    # 编码记录
+                    encoded_data, size = record.encode()
                     
+                    # 写入合并文件
+                    merge_file.write(encoded_data)
+                    
+                    # 更新索引映射
+                    new_pos = LogRecordPos(1, offset, size)
+                    new_pos_map[key] = new_pos
+                    
+                    # 更新写入位置
                     offset += size
-                    iterator.next()
                     
-            # 关闭所有文件句柄
-            if self.active_file:
-                self.active_file.close()
-            for file in self.older_files.values():
-                file.close()
+                    # 移动到下一个键
+                    it.next()
                     
-            # 删除旧文件
-            for file_id in self.file_ids:
-                try:
-                    os.remove(os.path.join(self.options.dir_path, f"{str(file_id)}.data"))
-                except:
-                    pass
+                # 关闭合并文件
+                merge_file.flush()
+                os.fsync(merge_file.fileno())
+                merge_file.close()
+                
+                # 关闭并清理当前所有数据文件
+                if self.active_file:
+                    self.active_file.close()
+                    self.active_file = None
                     
-            # 重命名合并文件
-            target_path = os.path.join(self.options.dir_path, "1.data")
-            if os.path.exists(target_path):
-                os.remove(target_path)
-            os.rename(merge_path, target_path)
-            
-            # 重新打开文件
-            self.file_ids = [1]
-            self.older_files = {}
-            self.active_file = DataFile(self.options.dir_path, 1)
-            
-            # 写入合并完成标记
-            record = LogRecord(
-                key=MERGE_FINISHED_KEY.encode(),
-                value=b"",
-                record_type=LogRecordType.NORMAL
-            )
-            self._append_log_record(record)
-            
+                for file_id, file in self.older_files.items():
+                    file.close()
+                self.older_files.clear()
+                
+                # 删除旧的数据文件
+                for file_id in self.file_ids:
+                    try:
+                        file_path = os.path.join(self.options.dir_path, f"{file_id:09d}{DATA_FILE_NAME_SUFFIX}")
+                        os.remove(file_path)
+                    except Exception as e:
+                        print(f"删除旧数据文件失败: {str(e)}")
+                        
+                # 将合并文件重命名为第一个数据文件
+                target_path = os.path.join(self.options.dir_path, f"000000001{DATA_FILE_NAME_SUFFIX}")
+                if os.path.exists(target_path):
+                    os.remove(target_path)
+                os.rename(merge_file_path, target_path)
+                
+                # 清空文件ID列表，只保留ID 1
+                self.file_ids = [1]
+                
+                # 打开新的活跃文件
+                self.active_file = DataFile(self.options.dir_path, 1)
+                
+                # 更新索引
+                for key, pos in new_pos_map.items():
+                    self.index.put(key, pos)
+                
+                # 创建并写入merge完成标记文件
+                merge_finished_path = os.path.join(self.options.dir_path, f"{MERGE_FINISHED_KEY}{DATA_FILE_NAME_SUFFIX}")
+                with open(merge_finished_path, "wb") as f:
+                    # 创建标记记录
+                    record = LogRecord(
+                        key=MERGE_FINISHED_KEY.encode(),
+                        value=b"",
+                        record_type=LogRecordType.NORMAL
+                    )
+                    encoded_data, _ = record.encode()
+                    f.write(encoded_data)
+                    f.flush()
+                    os.fsync(f.fileno())
+                    
+                # 重置可回收空间大小
+                self.reclaim_size = 0
+                
+            except Exception as e:
+                print(f"合并操作失败: {str(e)}")
+                raise
+            finally:
+                self.is_merging = False
+        
     def new_batch(self) -> Batch:
         """创建新的批量写入实例
         

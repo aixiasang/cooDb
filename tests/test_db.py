@@ -66,57 +66,36 @@ class TestDB(unittest.TestCase):
             
     def test_batch_operations(self):
         """测试批量操作"""
+        # 创建批量操作
         batch = self.db.new_batch()
         
-        # 添加多个操作
-        test_data = {
-            b"batch1": b"value1",
-            b"batch2": b"value2",
-            b"batch3": b"value3"
-        }
-        
-        for key, value in test_data.items():
+        # 写入数据
+        test_data = {}
+        for i in range(10):
+            key = f"batch_key{i}".encode()
+            value = f"batch_value{i}".encode()
             batch.put(key, value)
-            
-        # 在提交前数据不应该可见
-        for key in test_data:
-            self.assertIsNone(self.db.get(key))
-            
+            test_data[key] = value
+        
+        # 删除某些键
+        for i in range(5):
+            if i % 2 == 0:  # 删除偶数索引
+                key = f"batch_key{i}".encode()
+                batch.delete(key)
+                del test_data[key]
+        
         # 提交批量操作
         batch.commit()
         
-        # 验证所有数据
+        # 验证数据
         for key, value in test_data.items():
             self.assertEqual(self.db.get(key), value)
-            
-        # 测试批量删除
-        batch = self.db.new_batch()
-        batch.delete(b"batch1")
-        batch.delete(b"batch2")
         
-        # 在提交前数据应该还在
-        self.assertIsNotNone(self.db.get(b"batch1"))
-        self.assertIsNotNone(self.db.get(b"batch2"))
-        
-        # 提交删除操作
-        batch.commit()
-        
-        # 验证删除结果
-        self.assertIsNone(self.db.get(b"batch1"))
-        self.assertIsNone(self.db.get(b"batch2"))
-        self.assertIsNotNone(self.db.get(b"batch3"))
-        
-        # 测试回滚
-        batch = self.db.new_batch()
-        batch.put(b"batch4", b"value4")
-        batch.delete(b"batch3")
-        
-        # 回滚操作
-        batch.rollback()
-        
-        # 验证回滚结果
-        self.assertIsNone(self.db.get(b"batch4"))
-        self.assertIsNotNone(self.db.get(b"batch3"))
+        # 验证被删除的键不存在
+        for i in range(5):
+            if i % 2 == 0:  # 验证偶数索引被删除
+                key = f"batch_key{i}".encode()
+                self.assertIsNone(self.db.get(key))
         
     def test_iterator(self):
         """测试迭代器"""

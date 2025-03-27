@@ -8,6 +8,7 @@ from ..fio.io_manager import IOManager, FileIOManager, FileIOType
 from ..errors import ErrDataFileNotFound, ErrInvalidCRC, ErrDataFileIsUsing
 from .log_record import LogRecord, MAX_LOG_RECORD_HEADER_SIZE, HEADER_SIZE, LogRecordType, LogRecordPos
 import threading
+import traceback
 
 # 常量定义
 DATA_FILE_NAME_SUFFIX = ".data"
@@ -18,7 +19,7 @@ SEQ_NO_FILE_NAME = "seq-no"
 # 日志记录类型
 LOG_RECORD_NORMAL = LogRecordType.NORMAL
 LOG_RECORD_DELETED = LogRecordType.DELETED
-LOG_RECORD_TXN_FINISHED = LogRecordType.TXNCOMMIT
+LOG_RECORD_TXN_FINISHED = LogRecordType.TXNFINISHED
 
 @dataclass
 class LogRecordHeader:
@@ -31,59 +32,72 @@ class LogRecordHeader:
 class DataFile:
     """数据文件，用于存储数据库的数据记录"""
     
-    def __init__(self, dir_path: str, file_id: int):
+    def __init__(self, dir_path: str, file_id: int, io_type: FileIOType = FileIOType.StandardFIO):
         """初始化数据文件
         
         Args:
             dir_path: 数据目录路径
             file_id: 文件ID
+            io_type: IO类型，默认为标准文件IO
         """
         self.dir_path = dir_path
         self.file_id = file_id
         self.write_offset = 0
-        self.file = None
         self._mu = threading.RLock()  # 使用可重入锁
         self._locked = False  # 文件锁状态
         
-        # 确保目录存在
-        os.makedirs(dir_path, exist_ok=True)
-        
         # 构建文件路径
-        self.file_path = os.path.join(dir_path, f"{file_id}.data")
+        self.file_path = self.get_data_file_path(dir_path, file_id)
         
-        # 创建或打开文件
+        # 创建IO管理器
+        self.io_manager = IOManager.new_io_manager(self.file_path, io_type)
+        
+        # 获取文件大小作为写入偏移量
         try:
-            if not os.path.exists(self.file_path):
-                self.file = open(self.file_path, "wb+")
-            else:
-                self.file = open(self.file_path, "rb+")
-                self.write_offset = os.path.getsize(self.file_path)
+            self.write_offset = self.io_manager.size()
         except Exception as e:
-            print(f"打开文件失败: {str(e)}")
-            raise
-    
-    def acquire_lock(self) -> None:
-        """获取文件锁"""
+            print(f"获取文件大小失败: {str(e)}")
+            self.write_offset = 0
+            
+    def acquire_lock(self) -> bool:
+        """获取文件锁，返回是否成功
+        
+        Returns:
+            锁定是否成功
+        """
         with self._mu:
             if self._locked:
-                raise RuntimeError("文件已被锁定")
+                return True  # 已经持有锁
             try:
-                msvcrt.locking(self.file.fileno(), msvcrt.LK_NBLCK, 1)
-                self._locked = True
+                # 使用底层文件描述符获取锁
+                if hasattr(self.io_manager, 'fd'):
+                    msvcrt.locking(self.io_manager.fd.fileno(), msvcrt.LK_NBLCK, 1)
+                    self._locked = True
+                    return True
+                else:
+                    return False  # 无法获取文件描述符
             except IOError:
-                raise ErrDataFileIsUsing()
+                return False  # 无法获取锁
                 
-    def release_lock(self) -> None:
-        """释放文件锁"""
+    def release_lock(self) -> bool:
+        """释放文件锁，返回是否成功
+        
+        Returns:
+            释放是否成功
+        """
         with self._mu:
             if not self._locked:
-                return
+                return True  # 未持有锁
             try:
-                msvcrt.locking(self.file.fileno(), msvcrt.LK_UNLCK, 1)
+                if hasattr(self.io_manager, 'fd'):
+                    msvcrt.locking(self.io_manager.fd.fileno(), msvcrt.LK_UNLCK, 1)
+                    self._locked = False
+                    return True
+                else:
+                    return False
             except:
-                pass
-            finally:
-                self._locked = False
+                self._locked = False  # 即使释放失败也标记为未锁定
+                return False
     
     def read_log_record(self, offset: int) -> Optional[Tuple[LogRecord, int]]:
         """从指定位置读取一条日志记录
@@ -94,58 +108,66 @@ class DataFile:
         Returns:
             日志记录和实际大小的元组，如果读取失败返回None
         """
-        with self._mu:
-            try:
-                # 确保文件已打开
-                if not self.file:
-                    return None
-                
-                # 检查偏移量是否超出文件范围
-                if offset >= self.file_size:
-                    return None
-                
-                # 读取头部
-                self.file.seek(offset)
-                header_data = self.file.read(HEADER_SIZE)
-                if not header_data or len(header_data) < HEADER_SIZE:
-                    return None
-                    
-                # 解析头部
-                header_result = self.decode_log_record_header(header_data)
-                if not header_result or not header_result[0]:
-                    return None
-                    
-                header, _ = header_result
-                
-                # 验证头部数据的合理性
-                if header.key_size < 0 or header.value_size < 0 or header.key_size + header.value_size > 100 * 1024 * 1024:  # 最大100MB
-                    return None
-                    
-                # 计算总大小
-                total_size = HEADER_SIZE + header.key_size + header.value_size
-                
-                # 读取完整记录
-                self.file.seek(offset)
-                full_data = self.file.read(total_size)
-                if len(full_data) < total_size:
-                    return None
-                    
-                # 验证CRC
-                actual_crc = zlib.crc32(full_data[4:])
-                if header.crc != actual_crc:
-                    return None
-                    
-                # 提取键值
-                key = full_data[HEADER_SIZE:HEADER_SIZE + header.key_size]
-                value = full_data[HEADER_SIZE + header.key_size:total_size] if header.value_size > 0 else b""
-                
-                # 创建记录
-                record = LogRecord(key, value, LogRecordType(header.record_type))
-                return record, total_size
-                
-            except Exception as e:
-                print(f"读取日志记录失败: {str(e)}")
+        try:
+            # 获取文件大小
+            file_size = self.io_manager.size()
+            
+            # 如果偏移量超出文件范围，返回None
+            if offset >= file_size:
                 return None
+            
+            # 如果剩余文件大小不足以包含一个完整头部，返回None
+            if offset + HEADER_SIZE > file_size:
+                return None
+            
+            # 读取头部数据
+            header_buf = bytearray(HEADER_SIZE)
+            if self.io_manager.read(header_buf, offset) != HEADER_SIZE:
+                return None
+            
+            # 解析头部
+            crc = struct.unpack(">I", header_buf[:4])[0]
+            record_type = header_buf[4]
+            key_size = struct.unpack(">I", header_buf[5:9])[0]
+            value_size = struct.unpack(">I", header_buf[9:13])[0]
+            
+            # 检查头部数据合法性
+            if record_type not in [LogRecordType.NORMAL.value, LogRecordType.DELETED.value, LogRecordType.TXNFINISHED.value]:
+                return None
+            
+            if key_size <= 0 or value_size < 0 or key_size + value_size > 100 * 1024 * 1024:
+                return None
+            
+            # 计算总大小并检查范围
+            total_size = HEADER_SIZE + key_size + value_size
+            if offset + total_size > file_size:
+                return None
+            
+            # 读取完整记录
+            record_buf = bytearray(total_size)
+            if self.io_manager.read(record_buf, offset) != total_size:
+                return None
+            
+            # 验证CRC
+            computed_crc = zlib.crc32(record_buf[4:])
+            if crc != computed_crc:
+                return None
+            
+            # 提取键和值
+            key = bytes(record_buf[HEADER_SIZE:HEADER_SIZE + key_size])
+            value = bytes(record_buf[HEADER_SIZE + key_size:]) if value_size > 0 else b""
+            
+            # 创建LogRecord对象
+            log_record = LogRecord(
+                key=key,
+                value=value,
+                record_type=LogRecordType(record_type)
+            )
+            
+            return log_record, total_size
+            
+        except Exception as e:
+            return None
     
     def write_log_record(self, log_record: LogRecord) -> Tuple[int, int]:
         """写入一条日志记录
@@ -157,50 +179,31 @@ class DataFile:
             写入位置和写入大小的元组
         """
         with self._mu:
-            try:
-                # 获取写入位置
-                offset = self.write_offset
-                
-                # 编码日志记录
-                encoded_data, size = log_record.encode()
-                
-                # 写入数据
-                self.file.seek(offset)
-                self.file.write(encoded_data)
-                self.file.flush()
-                
-                # 更新写入偏移量
-                self.write_offset += size
-                
-                return offset, size
-                
-            except Exception as e:
-                print(f"写入日志记录失败: {str(e)}")
-                raise
+            # 获取写入位置
+            offset = self.write_offset
+            
+            # 编码日志记录
+            encoded_data, size = log_record.encode()
+            
+            # 写入数据
+            write_size = self.io_manager.write(encoded_data)
+            if write_size != len(encoded_data):
+                raise IOError(f"写入数据不完整: {write_size} != {len(encoded_data)}")
+            
+            # 更新写入偏移量
+            self.write_offset += size
+            
+            return offset, size
     
     def sync(self) -> None:
         """同步文件到磁盘"""
         with self._mu:
-            if self.file:
-                self.file.flush()
-                os.fsync(self.file.fileno())
+            self.io_manager.sync()
     
     def close(self) -> None:
         """关闭文件"""
         with self._mu:
-            if self.file:
-                # 释放文件锁
-                self.release_lock()
-                # 关闭文件
-                self.file.close()
-                self.file = None
-    
-    def __del__(self):
-        """析构函数，确保文件被关闭"""
-        try:
-            self.close()
-        except:
-            pass
+            self.io_manager.close()
     
     @property
     def file_size(self) -> int:
@@ -209,134 +212,34 @@ class DataFile:
         Returns:
             文件大小(字节)
         """
-        return os.path.getsize(self.file_path)
+        return self.io_manager.size()
 
     @classmethod
     def open_data_file(cls, dir_path: str, file_id: int, io_type: FileIOType) -> 'DataFile':
         """打开新的数据文件"""
-        file_name = cls.get_data_file_name(dir_path, file_id)
-        return cls.new_data_file(file_name, file_id, io_type)
+        return cls(dir_path, file_id, io_type)
         
     @classmethod
     def open_hint_file(cls, dir_path: str) -> 'DataFile':
         """打开 Hint 索引文件"""
-        file_name = os.path.join(dir_path, HINT_FILE_NAME)
-        return cls.new_data_file(file_name, 0, FileIOType.STANDARD)
+        hint_file = cls(dir_path, 0)
+        hint_file.file_path = os.path.join(dir_path, HINT_FILE_NAME)
+        return hint_file
         
     @classmethod
     def open_merge_finished_file(cls, dir_path: str) -> 'DataFile':
         """打开标识 merge 完成的文件"""
-        file_name = os.path.join(dir_path, MERGE_FINISHED_FILE_NAME)
-        return cls.new_data_file(file_name, 0, FileIOType.STANDARD)
+        merge_file = cls(dir_path, 0)
+        merge_file.file_path = os.path.join(dir_path, MERGE_FINISHED_FILE_NAME)
+        return merge_file
         
     @classmethod
     def open_seq_no_file(cls, dir_path: str) -> 'DataFile':
         """打开事务序列号文件"""
-        file_name = os.path.join(dir_path, SEQ_NO_FILE_NAME)
-        return cls.new_data_file(file_name, 0, FileIOType.STANDARD)
+        seq_file = cls(dir_path, 0)
+        seq_file.file_path = os.path.join(dir_path, SEQ_NO_FILE_NAME)
+        return seq_file
         
-    @staticmethod
-    def get_data_file_name(dir_path: str, file_id: int) -> str:
-        """获取数据文件名"""
-        return os.path.join(dir_path, f"{file_id:09d}{DATA_FILE_NAME_SUFFIX}")
-        
-    @classmethod
-    def new_data_file(cls, file_name: str, file_id: int, io_type: FileIOType) -> 'DataFile':
-        """创建新的数据文件"""
-        # 确保目录存在
-        os.makedirs(os.path.dirname(file_name), exist_ok=True)
-        io_manager = IOManager.new_io_manager(file_name, io_type)
-        return cls(file_name, file_id)
-        
-    def read_n_bytes(self, offset: int, n: int) -> Optional[bytes]:
-        """读取指定字节数"""
-        try:
-            buf = bytearray(n)
-            self.file.seek(offset)
-            self.file.read(buf)
-            return bytes(buf)
-        except Exception:
-            return None
-            
-    def write(self, buf: bytes) -> int:
-        """写入字节数组"""
-        with self._mu:
-            n = self.file.write(buf)
-            self.write_offset += n
-            return n
-        
-    def write_hint_record(self, key: bytes, pos: LogRecordPos) -> None:
-        """写入索引信息到 hint 文件"""
-        record = LogRecord(
-            key=key,
-            value=self.encode_log_record_pos(pos),
-            type=LOG_RECORD_NORMAL
-        )
-        enc_record = self.encode_log_record(record)
-        self.write(enc_record)
-        
-    @staticmethod
-    def encode_log_record(record: LogRecord) -> bytes:
-        """对 LogRecord 进行编码"""
-        # 计算 key 和 value 的长度
-        key_size = len(record.key)
-        value_size = len(record.value)
-        
-        # 构造头部
-        header = bytearray(4 + 1 + 4 + 4)  # CRC(4) + Type(1) + KeySize(4) + ValueSize(4)
-        header[4] = record.type
-        struct.pack_into('>I', header, 5, key_size)
-        struct.pack_into('>I', header, 9, value_size)
-        
-        # 构造完整记录
-        enc_bytes = bytearray(len(header) + key_size + value_size)
-        enc_bytes[4:] = header[4:]  # 跳过 CRC
-        pos = len(header)
-        enc_bytes[pos:pos + key_size] = record.key
-        pos += key_size
-        enc_bytes[pos:pos + value_size] = record.value
-        
-        # 计算并写入 CRC
-        crc = zlib.crc32(enc_bytes[4:])
-        struct.pack_into('>I', enc_bytes, 0, crc)
-        
-        return bytes(enc_bytes)
-        
-    @staticmethod
-    def encode_log_record_pos(pos: LogRecordPos) -> bytes:
-        """对位置信息进行编码"""
-        buf = bytearray(12)  # 3个4字节整数
-        struct.pack_into('>I', buf, 0, pos.file_id)
-        struct.pack_into('>I', buf, 4, pos.offset)
-        struct.pack_into('>I', buf, 8, pos.size)
-        return bytes(buf)
-        
-    @staticmethod
-    def decode_log_record_header(buf: bytes) -> Tuple[Optional[LogRecordHeader], int]:
-        """解码日志记录头部"""
-        if len(buf) <= 4:
-            return None, 0
-            
-        header = LogRecordHeader(
-            crc=struct.unpack('>I', buf[:4])[0],
-            record_type=buf[4],
-            key_size=struct.unpack('>I', buf[5:9])[0],
-            value_size=struct.unpack('>I', buf[9:13])[0]
-        )
-        
-        return header, 13
-        
-    @staticmethod
-    def get_log_record_crc(record: LogRecord, header: bytes) -> int:
-        """计算日志记录的 CRC 值"""
-        if not record:
-            return 0
-            
-        crc = zlib.crc32(header)
-        crc = zlib.crc32(record.key, crc)
-        crc = zlib.crc32(record.value, crc)
-        return crc 
-
     @staticmethod
     def get_data_file_path(dir_path: str, file_id: int) -> str:
         """获取数据文件路径
@@ -348,7 +251,106 @@ class DataFile:
         Returns:
             数据文件完整路径
         """
-        return os.path.join(dir_path, f"{file_id}.data") 
+        return os.path.join(dir_path, f"{file_id:09d}{DATA_FILE_NAME_SUFFIX}")
+        
+    def reset_io_type(self, io_type: FileIOType = FileIOType.StandardFIO) -> None:
+        """重置IO类型，相当于bitcask-go中的SetIOManager方法
+        
+        Args:
+            io_type: 新的IO类型
+        """
+        with self._mu:
+            old_offset = self.write_offset  # 保存当前写入位置
+            
+            # 关闭当前IO管理器
+            self.io_manager.close()
+            
+            # 创建新的IO管理器
+            self.io_manager = IOManager.new_io_manager(self.file_path, io_type)
+            
+            # 恢复写入位置
+            self.write_offset = old_offset
+        
+    def read_n_bytes(self, n: int, offset: int) -> Optional[bytes]:
+        """读取指定字节数
+        
+        Args:
+            n: 要读取的字节数
+            offset: 起始偏移量
+            
+        Returns:
+            读取的字节数据，失败返回None
+        """
+        buf = bytearray(n)
+        read_size = self.io_manager.read(buf, offset)
+        if read_size != n:
+            return None
+        return bytes(buf)
+            
+    def write(self, buf: bytes) -> int:
+        """写入字节数组
+        
+        Args:
+            buf: 要写入的数据
+            
+        Returns:
+            写入的字节数
+        """
+        with self._mu:
+            write_size = self.io_manager.write(buf)
+            self.write_offset += write_size
+            return write_size
+        
+    def write_hint_record(self, key: bytes, pos: LogRecordPos) -> None:
+        """写入索引信息到 hint 文件
+        
+        Args:
+            key: 键
+            pos: 位置信息
+        """
+        # 创建日志记录，值为位置信息的编码
+        record = LogRecord(
+            key=key,
+            value=pos.encode(),
+            record_type=LogRecordType.NORMAL
+        )
+        
+        # 编码日志记录
+        encoded_data, _ = record.encode()
+        
+        # 写入数据
+        self.write(encoded_data)
+        
+    @staticmethod
+    def decode_log_record_header(buf: bytes) -> Tuple[Optional[LogRecordHeader], int]:
+        """解码日志记录头部
+        
+        Args:
+            buf: 头部字节数据
+            
+        Returns:
+            头部信息对象和头部大小的元组
+        """
+        if len(buf) < HEADER_SIZE:
+            return None, 0
+        
+        try:
+            # 解析头部字段
+            crc = struct.unpack(">I", buf[:4])[0]
+            record_type = buf[4]
+            key_size = struct.unpack(">I", buf[5:9])[0]
+            value_size = struct.unpack(">I", buf[9:13])[0]
+            
+            header = LogRecordHeader(
+                crc=crc,
+                record_type=record_type,
+                key_size=key_size,
+                value_size=value_size
+            )
+            
+            return header, HEADER_SIZE
+        except Exception as e:
+            return None, 0
 
     def size(self) -> int:
         """获取文件大小
@@ -356,8 +358,4 @@ class DataFile:
         Returns:
             文件大小（字节）
         """
-        current_pos = self.file.tell()
-        self.file.seek(0, os.SEEK_END)
-        size = self.file.tell()
-        self.file.seek(current_pos)
-        return size 
+        return self.io_manager.size() 

@@ -54,14 +54,17 @@ class Iterator:
         """
         return self.index_iter.key()
         
-    def value(self) -> bytes:
+    def value(self) -> Optional[bytes]:
         """获取当前值
         
         Returns:
-            当前值
+            当前值，如果不存在则返回None
         """
+        # 获取当前键的位置信息
         pos = self.index_iter.value()
-        record = self.db._read_log_record(pos)
-        if not record:
+        if not pos:
             return None
-        return record.value 
+        
+        # 获取记录数据
+        value = self.db._get_value_by_position(pos)
+        return value 

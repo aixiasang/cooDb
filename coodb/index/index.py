@@ -1,25 +1,38 @@
 """索引接口定义"""
 
 from enum import Enum
-from typing import Optional, TypeVar, Generic, Tuple
+from typing import Optional, TypeVar, Generic, Tuple, List, Iterator as IteratorType, Dict
 from dataclasses import dataclass
 
 from coodb.iterator import Iterator
 from ..data.log_record import LogRecordPos
+from ..errors import ErrIndexUpdateFailed
 
 KT = TypeVar('KT')
 VT = TypeVar('VT')
 
 class IndexType(Enum):
     """索引类型"""
-    BTREE = "btree"
-    ART = "art"
-    BPTREE = "bptree"
-    SKIPLIST = "skiplist"
+    BTREE = 0
+    ART = 1
+    BPTREE = 2
+    SKIPLIST = 3
 
 class Indexer(Generic[KT, VT]):
-    """索引器接口"""
+    """索引接口定义"""
     
+    def put(self, key: KT, value: VT) -> Optional[VT]:
+        """设置键值对，返回旧值
+        
+        Args:
+            key: 键
+            value: 值
+            
+        Returns:
+            旧值，如果键不存在则返回None
+        """
+        raise NotImplementedError
+        
     def get(self, key: KT) -> Optional[VT]:
         """获取键对应的值
         
@@ -27,19 +40,7 @@ class Indexer(Generic[KT, VT]):
             key: 键
             
         Returns:
-            值，如果不存在则返回None
-        """
-        raise NotImplementedError
-        
-    def put(self, key: KT, value: VT) -> Optional[VT]:
-        """存入键值对
-        
-        Args:
-            key: 键
-            value: 值
-            
-        Returns:
-            如果键已存在，返回旧值
+            值，不存在则返回None
         """
         raise NotImplementedError
         
@@ -50,18 +51,18 @@ class Indexer(Generic[KT, VT]):
             key: 键
             
         Returns:
-            如果键存在，返回旧值
+            删除的值，不存在则返回None
         """
         raise NotImplementedError
         
-    def iterator(self, reverse: bool = False) -> "Iterator[KT, VT]":
+    def iterator(self, reverse: bool = False) -> IteratorType:
         """创建迭代器
         
         Args:
             reverse: 是否反向遍历
             
         Returns:
-            迭代器实例
+            迭代器
         """
         raise NotImplementedError
         
@@ -72,6 +73,20 @@ class Indexer(Generic[KT, VT]):
             键值对数量
         """
         raise NotImplementedError
+        
+    def list_keys(self) -> List[KT]:
+        """获取索引中的所有键
+        
+        Returns:
+            键列表
+        """
+        keys = []
+        it = self.iterator(False)
+        it.rewind()
+        while it.valid():
+            keys.append(it.key())
+            it.next()
+        return keys
         
     def close(self) -> None:
         """关闭索引"""

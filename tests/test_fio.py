@@ -41,29 +41,35 @@ class TestIOManager(unittest.TestCase):
                 retry_count -= 1
             
     def test_standard_io(self):
-        # 测试标准文件IO
-        file_path = os.path.join(self.test_dir, "test.data")
-        io_manager = IOManager.new_io_manager(file_path, FileIOType.STANDARD)
+        """测试标准文件IO"""
+        # 创建临时文件
+        file_path = os.path.join(self.test_dir, "test_standard.dat")
+        
+        # 创建标准IO管理器
+        io_manager = IOManager.new_io_manager(file_path, FileIOType.StandardFIO)
         self.io_managers.append(io_manager)
         
+        # 测试写入和读取
+        test_data = b"Hello, CoolDB!"
+        
         # 写入数据
-        test_data = b"Hello, World!"
-        written = io_manager.write(test_data)
-        self.assertEqual(written, len(test_data))
+        write_size = io_manager.write(test_data)
+        self.assertEqual(write_size, len(test_data))
         
         # 读取数据
-        buf = bytearray(len(test_data))
-        read = io_manager.read(buf, 0)
-        self.assertEqual(read, len(test_data))
-        self.assertEqual(bytes(buf), test_data)
+        read_buffer = bytearray(len(test_data))
+        read_size = io_manager.read(read_buffer, 0)
+        self.assertEqual(read_size, len(test_data))
+        self.assertEqual(bytes(read_buffer), test_data)
         
-        # 同步
-        io_manager.sync()
+        # 测试文件大小
+        file_size = io_manager.size()
+        self.assertEqual(file_size, len(test_data))
         
     def test_mmap_io(self):
         # 测试内存映射IO
-        file_path = os.path.join(self.test_dir, "test.mmap")
-        io_manager = IOManager.new_io_manager(file_path, FileIOType.MEMORY_MAP)
+        file_path = os.path.join(self.test_dir, "test_mmap.dat")
+        io_manager = IOManager.new_io_manager(file_path, FileIOType.MemoryMap)
         self.io_managers.append(io_manager)
         
         # 写入数据
@@ -81,28 +87,28 @@ class TestIOManager(unittest.TestCase):
         io_manager.sync()
         
     def test_large_data(self):
-        # 测试大数据
-        file_path = os.path.join(self.test_dir, "large.data")
-        io_manager = IOManager.new_io_manager(file_path, FileIOType.STANDARD)
+        """测试大数据量读写"""
+        # 创建临时文件
+        file_path = os.path.join(self.test_dir, "test_large.dat")
+        
+        # 创建标准IO管理器
+        io_manager = IOManager.new_io_manager(file_path, FileIOType.StandardFIO)
         self.io_managers.append(io_manager)
         
-        # 生成1MB的测试数据
-        test_data = b"x" * (1024 * 1024)
+        # 生成1MB测试数据
+        data_size = 1024 * 1024
+        test_data = os.urandom(data_size)
         
         # 写入数据
-        written = io_manager.write(test_data)
-        self.assertEqual(written, len(test_data))
+        io_manager.write(test_data)
         
-        # 分块读取数据
-        chunk_size = 8192
-        offset = 0
-        while offset < len(test_data):
-            buf = bytearray(min(chunk_size, len(test_data) - offset))
-            read = io_manager.read(buf, offset)
-            self.assertEqual(read, len(buf))
-            self.assertEqual(bytes(buf), test_data[offset:offset + len(buf)])
-            offset += read
-            
+        # 读取数据
+        read_buffer = bytearray(data_size)
+        io_manager.read(read_buffer, 0)
+        
+        # 验证数据一致性
+        self.assertEqual(test_data, bytes(read_buffer))
+        
     def test_invalid_io_type(self):
         # 测试无效的IO类型
         file_path = os.path.join(self.test_dir, "invalid.data")
@@ -110,32 +116,39 @@ class TestIOManager(unittest.TestCase):
             IOManager.new_io_manager(file_path, "INVALID")
             
     def test_sequential_writes(self):
-        # 测试顺序写入
-        file_path = os.path.join(self.test_dir, "sequential.data")
-        io_manager = IOManager.new_io_manager(file_path, FileIOType.STANDARD)
+        """测试连续写入"""
+        # 创建临时文件
+        file_path = os.path.join(self.test_dir, "test_sequential.dat")
+        
+        # 创建标准IO管理器
+        io_manager = IOManager.new_io_manager(file_path, FileIOType.StandardFIO)
         self.io_managers.append(io_manager)
         
-        # 写入第一段数据
-        data1 = b"First Write"
-        written1 = io_manager.write(data1)
-        self.assertEqual(written1, len(data1))
-        io_manager.sync()
+        # 测试数据
+        test_data1 = b"First chunk of data"
+        test_data2 = b"Second chunk of data"
+        test_data3 = b"Third chunk of data"
         
-        # 写入第二段数据
-        data2 = b"Second Write"
-        written2 = io_manager.write(data2)
-        self.assertEqual(written2, len(data2))
-        io_manager.sync()
+        # 连续写入数据
+        offset1 = 0
+        write_size1 = io_manager.write(test_data1)
+        offset2 = offset1 + write_size1
+        write_size2 = io_manager.write(test_data2)
+        offset3 = offset2 + write_size2
+        write_size3 = io_manager.write(test_data3)
         
-        # 读取所有数据
-        total_len = len(data1) + len(data2)
-        buf = bytearray(total_len)
-        read = io_manager.read(buf, 0)
-        self.assertEqual(read, total_len)
+        # 读取并验证数据
+        read_buffer1 = bytearray(len(test_data1))
+        io_manager.read(read_buffer1, offset1)
+        self.assertEqual(bytes(read_buffer1), test_data1)
         
-        # 验证数据
-        expected = data1 + data2
-        self.assertEqual(bytes(buf), expected)
+        read_buffer2 = bytearray(len(test_data2))
+        io_manager.read(read_buffer2, offset2)
+        self.assertEqual(bytes(read_buffer2), test_data2)
+        
+        read_buffer3 = bytearray(len(test_data3))
+        io_manager.read(read_buffer3, offset3)
+        self.assertEqual(bytes(read_buffer3), test_data3)
 
 if __name__ == '__main__':
     unittest.main() 

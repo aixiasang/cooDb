@@ -229,24 +229,28 @@ class TestDataFile(unittest.TestCase):
     
     def test_data_file_concurrent_access(self):
         """测试并发访问"""
-        data_file = None
-        try:
-            data_file = DataFile(self.test_dir, 5)
-            
-            # 第一次获取锁
-            data_file.acquire_lock()
-            
-            # 尝试再次获取锁应该失败
-            with self.assertRaises(RuntimeError):
-                data_file.acquire_lock()
-                
-            # 释放锁后应该可以再次获取
-            data_file.release_lock()
-            data_file.acquire_lock()
-            data_file.release_lock()
-        finally:
-            if data_file:
-                data_file.close()
+        # 创建数据文件
+        data_file = DataFile(self.test_dir, file_id=999)
+        
+        # 获取锁
+        self.assertTrue(data_file.acquire_lock())
+        
+        # 第二次获取锁应该成功，因为锁是可重入的
+        self.assertTrue(data_file.acquire_lock())
+        
+        # 创建第二个数据文件实例，尝试获取锁
+        data_file2 = DataFile(self.test_dir, file_id=999)
+        self.assertFalse(data_file2.acquire_lock())
+        
+        # 释放锁
+        self.assertTrue(data_file.release_lock())
+        
+        # 现在第二个实例应该能获取到锁
+        self.assertTrue(data_file2.acquire_lock())
+        
+        # 释放所有资源
+        data_file.close()
+        data_file2.close()
 
 if __name__ == '__main__':
     unittest.main() 

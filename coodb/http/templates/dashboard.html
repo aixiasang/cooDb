@@ -1,0 +1,970 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CoolDB 数据浏览器</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.3/font/bootstrap-icons.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    .key-cell {
+      max-width: 300px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .value-cell {
+      max-width: 500px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .json-value {
+      white-space: pre-wrap;
+      font-family: monospace;
+    }
+    .binary-value {
+      font-family: monospace;
+      color: #6c757d;
+    }
+    .chart-container {
+      height: 220px;
+      position: relative;
+    }
+  </style>
+</head>
+<body>
+  <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+    <div class="container-fluid">
+      <a class="navbar-brand" href="/">CoolDB <small class="text-light">{{ api_version }}</small></a>
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="navbarNav">
+        <ul class="navbar-nav me-auto">
+          <li class="nav-item">
+            <a class="nav-link" href="/api">API 文档</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link active" href="/dashboard">数据浏览器</a>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </nav>
+
+  <div class="container-fluid py-4">
+    <div class="row g-4 mb-4">
+      <div class="col-12 col-md-6 col-lg-3">
+        <div class="card shadow-sm">
+          <div class="card-body">
+            <h6 class="card-subtitle mb-2 text-muted">键值对数量</h6>
+            <h2 class="card-title" id="key-count">加载中...</h2>
+          </div>
+        </div>
+      </div>
+      <div class="col-12 col-md-6 col-lg-3">
+        <div class="card shadow-sm">
+          <div class="card-body">
+            <h6 class="card-subtitle mb-2 text-muted">数据文件数量</h6>
+            <h2 class="card-title" id="file-count">加载中...</h2>
+          </div>
+        </div>
+      </div>
+      <div class="col-12 col-md-6 col-lg-3">
+        <div class="card shadow-sm">
+          <div class="card-body">
+            <h6 class="card-subtitle mb-2 text-muted">磁盘占用</h6>
+            <h2 class="card-title" id="disk-size">加载中...</h2>
+          </div>
+        </div>
+      </div>
+      <div class="col-12 col-md-6 col-lg-3">
+        <div class="card shadow-sm">
+          <div class="card-body">
+            <h6 class="card-subtitle mb-2 text-muted">可回收空间</h6>
+            <h2 class="card-title" id="reclaimable-size">加载中...</h2>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 添加数据可视化图表 -->
+    <div class="row g-4 mb-4">
+      <div class="col-12 col-md-6">
+        <div class="card shadow-sm">
+          <div class="card-header bg-white py-3">
+            <h5 class="mb-0">存储空间分布</h5>
+          </div>
+          <div class="card-body">
+            <div class="chart-container">
+              <canvas id="storage-chart"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="col-12 col-md-6">
+        <div class="card shadow-sm">
+          <div class="card-header bg-white py-3">
+            <h5 class="mb-0">数据库操作</h5>
+          </div>
+          <div class="card-body">
+            <div class="d-grid gap-3">
+              <a href="/api/v1/backup" class="btn btn-success">
+                <i class="bi bi-download"></i> 备份数据库
+              </a>
+              <a href="/api/v1/export" class="btn btn-info">
+                <i class="bi bi-file-earmark-arrow-down"></i> 导出数据为JSON
+              </a>
+              <button id="import-btn" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#importModal">
+                <i class="bi bi-file-earmark-arrow-up"></i> 从JSON导入数据
+              </button>
+              <button id="merge-btn" class="btn btn-warning">
+                <i class="bi bi-collection"></i> 合并数据
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card shadow-sm">
+      <div class="card-header bg-white py-3">
+        <div class="row align-items-center">
+          <div class="col">
+            <h5 class="mb-0">数据浏览</h5>
+          </div>
+          <div class="col-auto">
+            <div class="input-group">
+              <input type="text" id="search-input" class="form-control" placeholder="搜索键...">
+              <button id="search-btn" class="btn btn-outline-secondary" type="button">
+                <i class="bi bi-search"></i>
+              </button>
+            </div>
+          </div>
+          <div class="col-auto">
+            <button id="refresh-btn" class="btn btn-outline-primary" title="刷新">
+              <i class="bi bi-arrow-clockwise"></i>
+            </button>
+          </div>
+          <div class="col-auto">
+            <button id="create-btn" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createKeyModal">
+              <i class="bi bi-plus-lg"></i> 新建键值对
+            </button>
+          </div>
+        </div>
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-hover mb-0">
+            <thead class="table-light">
+              <tr>
+                <th style="width: 40%">键</th>
+                <th style="width: 50%">值</th>
+                <th style="width: 10%">操作</th>
+              </tr>
+            </thead>
+            <tbody id="keys-table-body">
+              <tr>
+                <td colspan="3" class="text-center py-5">
+                  <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">加载中...</span>
+                  </div>
+                  <p class="mt-3 text-muted">正在加载数据...</p>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card-footer bg-white py-3">
+        <div class="row align-items-center">
+          <div class="col">
+            <p class="mb-0 text-muted" id="pagination-info">加载中...</p>
+          </div>
+          <div class="col-auto">
+            <div class="btn-group" id="pagination-controls">
+              <button id="prev-page-btn" class="btn btn-outline-secondary" disabled>
+                <i class="bi bi-chevron-left"></i>
+              </button>
+              <button id="next-page-btn" class="btn btn-outline-secondary" disabled>
+                <i class="bi bi-chevron-right"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 创建键值对模态框 -->
+  <div class="modal fade" id="createKeyModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">新建键值对</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label for="create-key-input" class="form-label">键</label>
+            <input type="text" class="form-control" id="create-key-input" placeholder="输入键名">
+          </div>
+          <div class="mb-3">
+            <label for="create-value-input" class="form-label">值</label>
+            <textarea class="form-control" id="create-value-input" rows="5" placeholder="输入值"></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+          <button type="button" class="btn btn-primary" id="save-key-btn">保存</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 查看键值对模态框 -->
+  <div class="modal fade" id="viewKeyModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">查看键值对</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label">键</label>
+            <div class="form-control bg-light" id="view-key"></div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">值</label>
+            <div class="form-control bg-light" id="view-value" style="min-height: 200px; overflow: auto;"></div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 编辑键值对模态框 -->
+  <div class="modal fade" id="editKeyModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">编辑键值对</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label">键</label>
+            <div class="form-control bg-light" id="edit-key"></div>
+            <input type="hidden" id="edit-key-raw">
+          </div>
+          <div class="mb-3">
+            <label for="edit-value-input" class="form-label">值</label>
+            <textarea class="form-control" id="edit-value-input" rows="5"></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+          <button type="button" class="btn btn-primary" id="update-key-btn">更新</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 删除确认模态框 -->
+  <div class="modal fade" id="deleteKeyModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-sm">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">确认删除</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <p>确定要删除键 <strong id="delete-key"></strong> 吗？</p>
+          <input type="hidden" id="delete-key-raw">
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+          <button type="button" class="btn btn-danger" id="confirm-delete-btn">删除</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 导入数据模态框 -->
+  <div class="modal fade" id="importModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">导入数据</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <form id="import-form" enctype="multipart/form-data">
+            <div class="mb-3">
+              <label for="import-file" class="form-label">选择JSON文件</label>
+              <input type="file" class="form-control" id="import-file" name="file" accept=".json">
+              <div class="form-text">
+                文件格式必须是由导出功能产生的JSON文件。
+              </div>
+            </div>
+          </form>
+          <div id="import-progress" class="progress d-none mb-3">
+            <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 100%"></div>
+          </div>
+          <div id="import-result" class="alert d-none mt-3"></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+          <button type="button" class="btn btn-primary" id="start-import-btn">导入</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast 通知 -->
+  <div class="toast-container position-fixed bottom-0 end-0 p-3">
+    <div id="toast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
+      <div class="toast-header">
+        <strong class="me-auto" id="toast-title">通知</strong>
+        <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+      </div>
+      <div class="toast-body" id="toast-message"></div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    // 全局变量
+    let currentPage = 1;
+    let totalPages = 1;
+    let perPage = 20;
+    let searchQuery = '';
+    let storageChart = null;
+    
+    // 页面加载时执行
+    document.addEventListener('DOMContentLoaded', function() {
+      // 加载统计信息
+      loadStats();
+      
+      // 加载键值数据
+      loadKeys();
+      
+      // 注册事件处理程序
+      document.getElementById('search-btn').addEventListener('click', handleSearch);
+      document.getElementById('search-input').addEventListener('keyup', function(e) {
+        if (e.key === 'Enter') handleSearch();
+      });
+      document.getElementById('refresh-btn').addEventListener('click', refreshData);
+      document.getElementById('prev-page-btn').addEventListener('click', goToPrevPage);
+      document.getElementById('next-page-btn').addEventListener('click', goToNextPage);
+      document.getElementById('save-key-btn').addEventListener('click', createKey);
+      document.getElementById('update-key-btn').addEventListener('click', updateKey);
+      document.getElementById('confirm-delete-btn').addEventListener('click', deleteKey);
+      document.getElementById('merge-btn').addEventListener('click', mergeDatabase);
+      document.getElementById('start-import-btn').addEventListener('click', importData);
+    });
+    
+    // 加载统计信息
+    function loadStats() {
+      fetch('/api/v1/stats')
+        .then(response => response.json())
+        .then(data => {
+          document.getElementById('key-count').textContent = formatNumber(data.key_num);
+          document.getElementById('file-count').textContent = formatNumber(data.data_files_num);
+          document.getElementById('disk-size').textContent = formatBytes(data.disk_size);
+          document.getElementById('reclaimable-size').textContent = formatBytes(data.reclaimable_size);
+          
+          // 更新图表
+          updateStorageChart(data);
+        })
+        .catch(error => {
+          console.error('加载统计信息失败:', error);
+          showToast('错误', '加载统计信息失败: ' + error.message, 'danger');
+        });
+    }
+    
+    // 更新存储空间图表
+    function updateStorageChart(data) {
+      const usedSpace = data.disk_size - data.reclaimable_size;
+      const reclaimableSpace = data.reclaimable_size;
+      
+      const ctx = document.getElementById('storage-chart').getContext('2d');
+      
+      // 如果图表已存在，销毁它
+      if (storageChart) {
+        storageChart.destroy();
+      }
+      
+      // 创建新图表
+      storageChart = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+          labels: ['有效数据', '可回收空间'],
+          datasets: [{
+            data: [usedSpace, reclaimableSpace],
+            backgroundColor: [
+              'rgba(54, 162, 235, 0.8)',
+              'rgba(255, 193, 7, 0.8)'
+            ],
+            borderColor: [
+              'rgba(54, 162, 235, 1)',
+              'rgba(255, 193, 7, 1)'
+            ],
+            borderWidth: 1
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            tooltip: {
+              callbacks: {
+                label: function(context) {
+                  const label = context.label || '';
+                  const value = formatBytes(context.raw);
+                  const percentage = Math.round(context.raw / data.disk_size * 100);
+                  return `${label}: ${value} (${percentage}%)`;
+                }
+              }
+            }
+          }
+        }
+      });
+    }
+    
+    // 加载键值数据
+    function loadKeys() {
+      // 显示加载中状态
+      document.getElementById('keys-table-body').innerHTML = `
+        <tr>
+          <td colspan="3" class="text-center py-5">
+            <div class="spinner-border text-primary" role="status">
+              <span class="visually-hidden">加载中...</span>
+            </div>
+            <p class="mt-3 text-muted">正在加载数据...</p>
+          </td>
+        </tr>
+      `;
+      
+      // 构建查询URL
+      const url = `/api/v1/keys?page=${currentPage}&per_page=${perPage}${searchQuery ? '&search=' + encodeURIComponent(searchQuery) : ''}`;
+      
+      // 获取数据
+      fetch(url)
+        .then(response => response.json())
+        .then(data => {
+          renderKeysTable(data.items);
+          updatePagination(data.pagination);
+        })
+        .catch(error => {
+          console.error('加载键值数据失败:', error);
+          showToast('错误', '加载键值数据失败: ' + error.message, 'danger');
+          
+          // 显示错误状态
+          document.getElementById('keys-table-body').innerHTML = `
+            <tr>
+              <td colspan="3" class="text-center py-5">
+                <i class="bi bi-exclamation-triangle text-danger" style="font-size: 2rem;"></i>
+                <p class="mt-3 text-muted">加载数据失败，请重试</p>
+              </td>
+            </tr>
+          `;
+        });
+    }
+    
+    // 渲染键值表格
+    function renderKeysTable(items) {
+      const tableBody = document.getElementById('keys-table-body');
+      
+      // 如果没有数据，显示空状态
+      if (!items || items.length === 0) {
+        tableBody.innerHTML = `
+          <tr>
+            <td colspan="3" class="text-center py-5">
+              <i class="bi bi-inbox text-muted" style="font-size: 2rem;"></i>
+              <p class="mt-3 text-muted">没有找到任何键值对</p>
+            </td>
+          </tr>
+        `;
+        return;
+      }
+      
+      // 渲染数据行
+      let html = '';
+      for (const item of items) {
+        // 处理值的显示
+        let valueDisplay = '';
+        if (item.value === null) {
+          valueDisplay = '<em class="text-muted">空值</em>';
+        } else if (item.value.startsWith('[BINARY]')) {
+          valueDisplay = `<span class="binary-value">${item.value}</span>`;
+        } else {
+          // 尝试检测是否为JSON
+          try {
+            const json = JSON.parse(item.value);
+            const formatted = JSON.stringify(json, null, 2);
+            valueDisplay = `<span class="json-value">${escapeHtml(formatted.substring(0, 100))}${formatted.length > 100 ? '...' : ''}</span>`;
+          } catch {
+            valueDisplay = escapeHtml(item.value.substring(0, 100)) + (item.value.length > 100 ? '...' : '');
+          }
+        }
+        
+        html += `
+          <tr>
+            <td class="key-cell">${escapeHtml(item.key)}</td>
+            <td class="value-cell">${valueDisplay}</td>
+            <td>
+              <div class="btn-group">
+                <button class="btn btn-sm btn-outline-info" onclick="viewKey('${escapeHtml(item.key)}', '${item.raw_key}')">
+                  <i class="bi bi-eye"></i>
+                </button>
+                <button class="btn btn-sm btn-outline-warning" onclick="editKey('${escapeHtml(item.key)}', '${item.raw_key}')">
+                  <i class="bi bi-pencil"></i>
+                </button>
+                <button class="btn btn-sm btn-outline-danger" onclick="confirmDelete('${escapeHtml(item.key)}', '${item.raw_key}')">
+                  <i class="bi bi-trash"></i>
+                </button>
+              </div>
+            </td>
+          </tr>
+        `;
+      }
+      
+      tableBody.innerHTML = html;
+    }
+    
+    // 更新分页信息
+    function updatePagination(pagination) {
+      currentPage = pagination.page;
+      totalPages = pagination.total_pages;
+      
+      // 更新分页信息文本
+      document.getElementById('pagination-info').textContent = 
+        `显示第 ${pagination.page} 页，共 ${pagination.total_pages} 页，总计 ${pagination.total_count} 条记录`;
+      
+      // 更新分页按钮状态
+      document.getElementById('prev-page-btn').disabled = pagination.page <= 1;
+      document.getElementById('next-page-btn').disabled = pagination.page >= pagination.total_pages;
+    }
+    
+    // 搜索处理函数
+    function handleSearch() {
+      const input = document.getElementById('search-input');
+      searchQuery = input.value.trim();
+      currentPage = 1;  // 重置到第一页
+      loadKeys();
+    }
+    
+    // 刷新数据
+    function refreshData() {
+      loadStats();
+      loadKeys();
+    }
+    
+    // 上一页
+    function goToPrevPage() {
+      if (currentPage > 1) {
+        currentPage--;
+        loadKeys();
+      }
+    }
+    
+    // 下一页
+    function goToNextPage() {
+      if (currentPage < totalPages) {
+        currentPage++;
+        loadKeys();
+      }
+    }
+    
+    // 查看键值对
+    function viewKey(key, rawKey) {
+      fetch(`/api/v1/keys/${rawKey}?base64=true`)
+        .then(response => {
+          if (!response.ok) {
+            throw new Error('获取键值对失败: ' + response.statusText);
+          }
+          return response.json();
+        })
+        .then(data => {
+          document.getElementById('view-key').textContent = key;
+          
+          const valueElement = document.getElementById('view-value');
+          
+          // 根据编码显示值
+          if (data.encoding === 'base64') {
+            valueElement.innerHTML = `<span class="binary-value">[BINARY] ${data.value}</span>`;
+          } else {
+            // 尝试检测是否为JSON
+            try {
+              const json = JSON.parse(data.value);
+              const formatted = JSON.stringify(json, null, 2);
+              valueElement.innerHTML = `<pre class="json-value mb-0">${escapeHtml(formatted)}</pre>`;
+            } catch {
+              valueElement.textContent = data.value;
+            }
+          }
+          
+          // 显示模态框
+          const modal = new bootstrap.Modal(document.getElementById('viewKeyModal'));
+          modal.show();
+        })
+        .catch(error => {
+          console.error('查看键值对失败:', error);
+          showToast('错误', error.message, 'danger');
+        });
+    }
+    
+    // 显示编辑模态框
+    function editKey(key, rawKey) {
+      fetch(`/api/v1/keys/${rawKey}?base64=true`)
+        .then(response => {
+          if (!response.ok) {
+            throw new Error('获取键值对失败: ' + response.statusText);
+          }
+          return response.json();
+        })
+        .then(data => {
+          document.getElementById('edit-key').textContent = key;
+          document.getElementById('edit-key-raw').value = rawKey;
+          
+          // 设置值
+          const valueInput = document.getElementById('edit-value-input');
+          if (data.encoding === 'base64') {
+            valueInput.value = data.value;
+            valueInput.dataset.encoding = 'base64';
+          } else {
+            valueInput.value = data.value;
+            valueInput.dataset.encoding = '';
+          }
+          
+          // 显示模态框
+          const modal = new bootstrap.Modal(document.getElementById('editKeyModal'));
+          modal.show();
+        })
+        .catch(error => {
+          console.error('编辑键值对失败:', error);
+          showToast('错误', error.message, 'danger');
+        });
+    }
+    
+    // 创建新键值对
+    function createKey() {
+      const key = document.getElementById('create-key-input').value.trim();
+      const value = document.getElementById('create-value-input').value;
+      
+      if (!key) {
+        showToast('警告', '键不能为空', 'warning');
+        return;
+      }
+      
+      // 创建请求体
+      const requestBody = {
+        value: value
+      };
+      
+      // 发送请求
+      fetch(`/api/v1/keys/${encodeURIComponent(key)}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(requestBody)
+      })
+        .then(response => {
+          if (!response.ok) {
+            return response.json().then(data => {
+              throw new Error(data.error || '创建键值对失败');
+            });
+          }
+          return response.json();
+        })
+        .then(data => {
+          // 隐藏模态框
+          const modal = bootstrap.Modal.getInstance(document.getElementById('createKeyModal'));
+          modal.hide();
+          
+          // 清空表单
+          document.getElementById('create-key-input').value = '';
+          document.getElementById('create-value-input').value = '';
+          
+          // 显示成功消息
+          showToast('成功', '键值对创建成功', 'success');
+          
+          // 刷新数据
+          refreshData();
+        })
+        .catch(error => {
+          console.error('创建键值对失败:', error);
+          showToast('错误', error.message, 'danger');
+        });
+    }
+    
+    // 更新键值对
+    function updateKey() {
+      const rawKey = document.getElementById('edit-key-raw').value;
+      const value = document.getElementById('edit-value-input').value;
+      const encoding = document.getElementById('edit-value-input').dataset.encoding;
+      
+      // 创建请求体
+      const requestBody = {
+        value: value
+      };
+      
+      // 如果是base64编码，添加编码信息
+      if (encoding === 'base64') {
+        requestBody.encoding = 'base64';
+      }
+      
+      // 发送请求
+      fetch(`/api/v1/keys/${rawKey}?base64_key=true`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(requestBody)
+      })
+        .then(response => {
+          if (!response.ok) {
+            return response.json().then(data => {
+              throw new Error(data.error || '更新键值对失败');
+            });
+          }
+          return response.json();
+        })
+        .then(data => {
+          // 隐藏模态框
+          const modal = bootstrap.Modal.getInstance(document.getElementById('editKeyModal'));
+          modal.hide();
+          
+          // 显示成功消息
+          showToast('成功', '键值对更新成功', 'success');
+          
+          // 刷新数据
+          refreshData();
+        })
+        .catch(error => {
+          console.error('更新键值对失败:', error);
+          showToast('错误', error.message, 'danger');
+        });
+    }
+    
+    // 确认删除键值对
+    function confirmDelete(key, rawKey) {
+      document.getElementById('delete-key').textContent = key;
+      document.getElementById('delete-key-raw').value = rawKey;
+      
+      // 显示确认模态框
+      const modal = new bootstrap.Modal(document.getElementById('deleteKeyModal'));
+      modal.show();
+    }
+    
+    // 删除键值对
+    function deleteKey() {
+      const rawKey = document.getElementById('delete-key-raw').value;
+      
+      // 发送删除请求
+      fetch(`/api/v1/keys/${rawKey}?base64=true`, {
+        method: 'DELETE'
+      })
+        .then(response => {
+          if (!response.ok) {
+            return response.json().then(data => {
+              throw new Error(data.error || '删除键值对失败');
+            });
+          }
+          return response.json();
+        })
+        .then(data => {
+          // 隐藏模态框
+          const modal = bootstrap.Modal.getInstance(document.getElementById('deleteKeyModal'));
+          modal.hide();
+          
+          // 显示成功消息
+          showToast('成功', '键值对删除成功', 'success');
+          
+          // 刷新数据
+          refreshData();
+        })
+        .catch(error => {
+          console.error('删除键值对失败:', error);
+          showToast('错误', error.message, 'danger');
+        });
+    }
+    
+    // 执行数据合并
+    function mergeDatabase() {
+      if (!confirm('确定要执行数据合并操作吗？这将压缩数据文件并回收无效空间。')) {
+        return;
+      }
+      
+      // 显示Loading状态
+      const mergeBtn = document.getElementById('merge-btn');
+      const originalText = mergeBtn.innerHTML;
+      mergeBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> 合并中...';
+      mergeBtn.disabled = true;
+      
+      // 发送合并请求
+      fetch('/api/v1/merge', {
+        method: 'POST'
+      })
+        .then(response => {
+          if (!response.ok) {
+            return response.json().then(data => {
+              throw new Error(data.error || '数据合并失败');
+            });
+          }
+          return response.json();
+        })
+        .then(data => {
+          // 显示成功消息
+          showToast('成功', '数据合并操作已完成', 'success');
+          
+          // 刷新数据
+          refreshData();
+        })
+        .catch(error => {
+          console.error('数据合并失败:', error);
+          showToast('错误', error.message, 'danger');
+        })
+        .finally(() => {
+          // 恢复按钮状态
+          mergeBtn.innerHTML = originalText;
+          mergeBtn.disabled = false;
+        });
+    }
+    
+    // 导入数据
+    function importData() {
+      const fileInput = document.getElementById('import-file');
+      if (!fileInput.files || fileInput.files.length === 0) {
+        showToast('警告', '请选择要导入的文件', 'warning');
+        return;
+      }
+      
+      const file = fileInput.files[0];
+      if (!file.name.endsWith('.json')) {
+        showToast('警告', '仅支持导入JSON文件', 'warning');
+        return;
+      }
+      
+      // 显示进度条
+      const progressBar = document.getElementById('import-progress');
+      progressBar.classList.remove('d-none');
+      
+      // 隐藏结果区域
+      const resultArea = document.getElementById('import-result');
+      resultArea.classList.add('d-none');
+      
+      // 禁用导入按钮
+      const importBtn = document.getElementById('start-import-btn');
+      importBtn.disabled = true;
+      
+      // 创建表单数据
+      const formData = new FormData();
+      formData.append('file', file);
+      
+      // 发送导入请求
+      fetch('/api/v1/import', {
+        method: 'POST',
+        body: formData
+      })
+        .then(response => {
+          if (!response.ok) {
+            return response.json().then(data => {
+              throw new Error(data.error || '数据导入失败');
+            });
+          }
+          return response.json();
+        })
+        .then(data => {
+          // 隐藏进度条
+          progressBar.classList.add('d-none');
+          
+          // 显示结果
+          resultArea.classList.remove('d-none');
+          
+          if (data.success) {
+            resultArea.className = 'alert alert-success mt-3';
+            resultArea.innerHTML = `
+              <h5>导入成功!</h5>
+              <p>已处理 ${data.processed} 个键值对</p>
+              ${data.errors.length > 0 ? 
+                `<p>有 ${data.errors.length} 个错误:</p>
+                 <ul>${data.errors.map(err => `<li>${err}</li>`).join('')}</ul>` : ''}
+            `;
+            
+            // 刷新数据
+            refreshData();
+          } else {
+            resultArea.className = 'alert alert-danger mt-3';
+            resultArea.textContent = data.error || '导入失败';
+          }
+        })
+        .catch(error => {
+          console.error('导入数据失败:', error);
+          
+          // 隐藏进度条
+          progressBar.classList.add('d-none');
+          
+          // 显示错误
+          resultArea.classList.remove('d-none');
+          resultArea.className = 'alert alert-danger mt-3';
+          resultArea.textContent = error.message;
+        })
+        .finally(() => {
+          // 恢复导入按钮
+          importBtn.disabled = false;
+        });
+    }
+    
+    // 显示Toast消息
+    function showToast(title, message, type = 'info') {
+      const toast = document.getElementById('toast');
+      const toastTitle = document.getElementById('toast-title');
+      const toastMessage = document.getElementById('toast-message');
+      
+      // 设置内容
+      toastTitle.textContent = title;
+      toastMessage.textContent = message;
+      
+      // 设置样式
+      toast.className = 'toast';
+      toast.classList.add(`text-bg-${type}`);
+      
+      // 显示Toast
+      const bsToast = new bootstrap.Toast(toast);
+      bsToast.show();
+    }
+    
+    // 格式化数字
+    function formatNumber(num) {
+      return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    }
+    
+    // 格式化字节大小
+    function formatBytes(bytes, decimals = 2) {
+      if (bytes === 0) return '0 Bytes';
+      
+      const k = 1024;
+      const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(decimals)) + ' ' + sizes[i];
+    }
+    
+    // HTML转义
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+  </script>
+</body>
+</html>

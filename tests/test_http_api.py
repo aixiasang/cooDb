@@ -7,34 +7,52 @@ import shutil
 import requests
 import threading
 import time
-from multiprocessing import Process
-from flask import Flask
+import multiprocessing
+import socket
+from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
 
 # 确保coodb模块可导入
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from coodb.http.server import Server
+# 导入FastAPI实现
+from coodb.http.api import app, get_db
+
+def find_free_port():
+    """找到可用的空闲端口"""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('0.0.0.0', 0))
+        return s.getsockname()[1]
+
+def start_server(host, port):
+    """启动FastAPI服务器"""
+    import uvicorn
+    uvicorn.run(app, host=host, port=port)
 
 class TestHTTPAPI(unittest.TestCase):
-    """测试Coodb HTTP API"""
+    """测试CoolDB HTTP API (FastAPI实现)"""
 
     @classmethod
     def setUpClass(cls):
         """启动HTTP服务器"""
         cls.test_dir = tempfile.mkdtemp()
-        os.environ['COODB_DATA_DIR'] = cls.test_dir
+        os.environ['COODB_DIR'] = cls.test_dir
         
-        # 启动测试服务器
-        cls.port = 8080
+        # 使用随机空闲端口避免冲突
+        cls.port = find_free_port()
         cls.host = "127.0.0.1"
         cls.base_url = f"http://{cls.host}:{cls.port}"
         
-        # 使用Server类启动HTTP服务
-        cls.server = Server(host=cls.host, port=cls.port)
-        cls.server.start(block=False)  # 非阻塞方式启动
+        # 使用多进程启动FastAPI服务器
+        cls.server_process = multiprocessing.Process(
+            target=start_server,
+            args=(cls.host, cls.port),
+            daemon=True
+        )
+        cls.server_process.start()
         
         # 等待服务器启动
-        time.sleep(1)
+        time.sleep(2)
         
         # 检查服务器是否启动
         retries = 5
@@ -54,9 +72,12 @@ class TestHTTPAPI(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         """关闭HTTP服务器"""
-        # 停止服务器
-        if hasattr(cls, 'server'):
-            cls.server.stop()
+        # 停止服务器进程
+        if hasattr(cls, 'server_process'):
+            cls.server_process.terminate()
+            cls.server_process.join(timeout=2)
+            if cls.server_process.is_alive():
+                cls.server_process.kill()
         
         # 清理临时目录
         try:
@@ -65,26 +86,28 @@ class TestHTTPAPI(unittest.TestCase):
             pass
         
         # 清理环境变量
-        if 'COODB_DATA_DIR' in os.environ:
-            del os.environ['COODB_DATA_DIR']
+        if 'COODB_DIR' in os.environ:
+            del os.environ['COODB_DIR']
 
     def test_root_endpoint(self):
         """测试根端点"""
         response = requests.get(f"{self.base_url}/")
         self.assertEqual(response.status_code, 200)
 
-    def test_get_openapi_spec(self):
-        """测试获取OpenAPI规范"""
-        response = requests.get(f"{self.base_url}/coodb.json")
-        self.assertEqual(response.status_code, 200)
-        data = response.json()
-        self.assertEqual(data["info"]["title"], "Coodb API")
-
     def test_api_docs(self):
-        """测试API文档页面"""
-        response = requests.get(f"{self.base_url}/api")
+        """测试API文档页面
+        
+        注意：此测试需要访问FastAPI自动生成的文档页面
+        """
+        # 测试自动生成的Swagger UI文档
+        response = requests.get(f"{self.base_url}/docs")
         self.assertEqual(response.status_code, 200)
         self.assertIn("text/html", response.headers["Content-Type"])
+        
+        # 测试自动生成的OpenAPI JSON
+        response = requests.get(f"{self.base_url}/openapi.json")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("application/json", response.headers["Content-Type"])
 
     def test_put_get_delete_key(self):
         """测试设置、获取和删除键值对"""
@@ -110,7 +133,13 @@ class TestHTTPAPI(unittest.TestCase):
         response = requests.get(f"{self.base_url}/api/v1/keys")
         self.assertEqual(response.status_code, 200)
         data = response.json()
-        self.assertIn(key, data["keys"])
+        # 检查items中是否包含我们的键
+        found = False
+        for item in data["items"]:
+            if item["key"] == key:
+                found = True
+                break
+        self.assertTrue(found, f"键 {key} 未在列表中找到")
         
         # 删除键值对
         response = requests.delete(f"{self.base_url}/api/v1/keys/{key}")
@@ -195,7 +224,7 @@ class TestHTTPAPI(unittest.TestCase):
         
         # 检查统计信息字段
         self.assertIn("key_num", data)
-        self.assertIn("data_file_num", data)
+        self.assertIn("data_files_num", data)  # 使用正确的字段名
         self.assertIn("reclaimable_size", data)
         self.assertIn("disk_size", data)
         
